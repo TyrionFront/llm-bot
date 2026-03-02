@@ -9,6 +9,7 @@ if (!process.env.TELEGRAM_TOKEN) throw new Error("TELEGRAM_TOKEN is required");
 if (!process.env.ADMIN_ID) throw new Error("ADMIN_ID is required");
 if (!process.env.GEMINI_KEY) throw new Error("GEMINI_KEY is required");
 if (!process.env.WEBHOOK_URL) throw new Error("WEBHOOK_URL is required");
+if (!process.env.WEBHOOK_SECRET_TOKEN) throw new Error("WEBHOOK_SECRET_TOKEN is required");
 
 if (process.env.NODE_ENV === "development") {
     console.log("[db] Running migrations...");
@@ -36,9 +37,13 @@ await bot.api.setChatMenuButton({
     menu_button: { type: "commands" },
 });
 
-await bot.api.setWebhook(process.env.WEBHOOK_URL);
+await bot.api.setWebhook(process.env.WEBHOOK_URL, {
+    secret_token: process.env.WEBHOOK_SECRET_TOKEN,
+});
 
-const handleUpdate = webhookCallback(bot, "bun");
+const handleUpdate = webhookCallback(bot, "bun", {
+    secretToken: process.env.WEBHOOK_SECRET_TOKEN,
+});
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = Bun.serve({

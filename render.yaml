@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: llm-bot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      # --- DATABASE MAPPING ---
+      - key: PGHOST
+        fromDatabase:
+          name: pet-db # Must match the name in the databases section below
+          property: host
+      - key: PGPORT
+        fromDatabase:
+          name: pet-db
+          property: port
+      - key: PGDATABASE
+        fromDatabase:
+          name: pet-db
+          property: database
+      - key: PGUSERNAME
+        fromDatabase:
+          name: pet-db
+          property: user
+      - key: PGPASSWORD
+        fromDatabase:
+          name: pet-db
+          property: password
+      # --- SECRETS ---
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: GEMINI_KEY
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: WEBHOOK_SECRET_TOKEN
+        sync: false
+
+databases:
+  - name: pet-db # Matches your requirement
+    plan: free
+    databaseName: insights_bot
+    user: admin
