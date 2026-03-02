@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1772306783246,
+      "tag": "0000_quick_black_panther",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772306783247,
+      "tag": "0001_consolidated",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772367707029,
+      "tag": "0002_easy_sunset_bain",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772368196995,
+      "tag": "0003_flawless_pet_avengers",
+      "breakpoints": true
+    }
+  ]
+}
