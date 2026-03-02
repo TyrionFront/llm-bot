@@ -48,7 +48,12 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const server = Bun.serve({
     port: PORT,
-    fetch: handleUpdate,
+    async fetch(req) {
+        if (req.method === "GET" && new URL(req.url).pathname === "/") {
+            return new Response("Bot is running!", { status: 200 });
+        }
+        return handleUpdate(req);
+    },
 });
 
 console.log(`🚀 Specialist Bot is Online (webhook) on port ${PORT}.`);
