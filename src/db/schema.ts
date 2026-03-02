@@ -1,6 +1,6 @@
-import { bigint, index, integer, pgEnum, pgTable, real, serial, text, timestamp, unique } from "drizzle-orm/pg-core"
+import { bigint, index, integer, pgEnum, pgTable, real, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"])
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"]);
 
 export const llmRegistry = pgTable("llm_registry", {
     modelId:      text("model_id").primaryKey(),
@@ -10,7 +10,7 @@ export const llmRegistry = pgTable("llm_registry", {
     syncId:       text("sync_id"),
     ratingSource: text("rating_source"),
     lastUpdated:  timestamp("last_updated").defaultNow(),
-})
+});
 
 export const techRegistry = pgTable("tech_registry", {
     entryId:     text("entry_id").primaryKey(),
@@ -22,7 +22,7 @@ export const techRegistry = pgTable("tech_registry", {
     syncId:      text("sync_id"),
     score:       real("score"),
     lastUpdated: timestamp("last_updated").defaultNow(),
-})
+});
 
 export const users = pgTable("users", {
     id:        serial("id").primaryKey(),
@@ -31,7 +31,7 @@ export const users = pgTable("users", {
     role:      userRoleEnum("role").notNull().default("USER"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
-}, (t) => [unique().on(t.userId)])
+}, (t) => [unique().on(t.userId)]);
 
 export const geminiCounters = pgTable("gemini_counters", {
     id:         integer("id").primaryKey().default(1),
@@ -39,7 +39,7 @@ export const geminiCounters = pgTable("gemini_counters", {
     rpmResetAt: timestamp("rpm_reset_at").notNull(),
     rpdCount:   integer("rpd_count").notNull().default(0),
     rpdResetAt: timestamp("rpd_reset_at").notNull(),
-})
+});
 
 export const userStats = pgTable("user_stats", {
     id:        serial("id").primaryKey(),
@@ -51,4 +51,4 @@ export const userStats = pgTable("user_stats", {
 }, (t) => [
     index("user_stats_users_id_idx").on(t.usersId),
     index("user_stats_created_at_idx").on(t.createdAt),
-])
+]);

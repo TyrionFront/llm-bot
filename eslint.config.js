@@ -17,6 +17,9 @@ export default [
             ...tseslint.configs.recommended.rules,
             "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
             "@typescript-eslint/no-explicit-any": "warn",
+            "space-infix-ops": "error",
+            "no-multi-spaces": "error",
+            "semi": ["error", "always"],
         },
     },
 ]

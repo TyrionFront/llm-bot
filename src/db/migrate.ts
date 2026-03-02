@@ -1,6 +1,6 @@
-import { migrate } from "drizzle-orm/node-postgres/migrator"
-import { db, pool } from "./index"
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { db, pool } from "./index";
 
-await migrate(db, { migrationsFolder: "./src/db/migrations" })
-console.log("Migrations applied successfully.")
-await pool.end()
+await migrate(db, { migrationsFolder: "./src/db/migrations" });
+console.log("Migrations applied successfully.");
+await pool.end();
