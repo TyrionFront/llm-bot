@@ -77,7 +77,7 @@ export async function logUserActivity(ctx: Context): Promise<void> {
     const username = ctx.from?.username ?? null;
 
     try {
-        const [user] = await db.insert(users)
+        await db.insert(users)
             .values({
                 userId,
                 username,
@@ -86,13 +86,10 @@ export async function logUserActivity(ctx: Context): Promise<void> {
             .onConflictDoUpdate({
                 target: users.userId,
                 set: { username, updatedAt: new Date() },
-            })
-            .returning({ id: users.id });
-
-        if (!user) return;
+            });
 
         await db.insert(userStats).values({
-            usersId: user.id,
+            usersId: userId,
             input:   ctx.message?.text ?? null,
         });
     } catch (e) {
@@ -111,8 +108,7 @@ export async function saveGeminiResponse(userId: number, response: string): Prom
         const [latestStat] = await db
             .select({ id: userStats.id })
             .from(userStats)
-            .innerJoin(users, eq(userStats.usersId, users.id))
-            .where(eq(users.userId, userId))
+            .where(eq(userStats.usersId, userId))
             .orderBy(desc(userStats.createdAt))
             .limit(1);
 
