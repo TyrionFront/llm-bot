@@ -29,6 +29,13 @@
       "when": 1772368196995,
       "tag": "0003_flawless_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772368196996,
+      "tag": "0004_user_stats_users_id_to_telegram_id",
+      "breakpoints": true
     }
   ]
 }

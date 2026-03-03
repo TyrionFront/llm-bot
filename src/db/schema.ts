@@ -1,4 +1,4 @@
-import { bigint, index, integer, pgEnum, pgTable, real, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgEnum, pgTable, real, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"]);
 
@@ -25,13 +25,12 @@ export const techRegistry = pgTable("tech_registry", {
 });
 
 export const users = pgTable("users", {
-    id:        serial("id").primaryKey(),
-    userId:    bigint("user_id", { mode: "number" }).notNull(),
+    userId:    bigint("user_id", { mode: "number" }).primaryKey(),
     username:  text("username"),
     role:      userRoleEnum("role").notNull().default("USER"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
-}, (t) => [unique().on(t.userId)]);
+});
 
 export const geminiCounters = pgTable("gemini_counters", {
     id:         integer("id").primaryKey().default(1),
@@ -43,7 +42,7 @@ export const geminiCounters = pgTable("gemini_counters", {
 
 export const userStats = pgTable("user_stats", {
     id:        serial("id").primaryKey(),
-    usersId:   integer("users_id").references(() => users.id),
+    usersId:   bigint("users_id", { mode: "number" }).references(() => users.userId),
     input:     text("input"),
     response:  text("response"),
     createdAt: timestamp("created_at").defaultNow(),
