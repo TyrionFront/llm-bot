@@ -8,6 +8,7 @@ import {
     handleSync,
     handleMessageText,
 } from "./handlers";
+import { ADMIN_ID, ADMIN_COMMANDS, USER_COMMANDS } from "./constants";
 
 export const bot = new Bot(process.env.TELEGRAM_TOKEN!);
 
@@ -23,3 +24,24 @@ bot.command("pricing", handlePricing);
 bot.command("tools", handleTools);
 bot.command("sync", handleSync);
 bot.on("message:text", handleMessageText);
+
+await bot.api.setMyCommands(USER_COMMANDS);
+await bot.api.setChatMenuButton({ menu_button: { type: "commands" } });
+
+try {
+    await bot.api.setMyCommands(ADMIN_COMMANDS, {
+        scope: { type: "chat", chat_id: ADMIN_ID },
+    });
+    await bot.api.setChatMenuButton({
+        chat_id: ADMIN_ID,
+        menu_button: { type: "commands" },
+    });
+} catch {
+    console.warn(
+        "[bot] Admin chat not found — send /start to the bot as admin to register admin commands.",
+    );
+}
+
+await bot.api.setWebhook(process.env.WEBHOOK_URL!, {
+    secret_token: process.env.WEBHOOK_SECRET_TOKEN,
+});

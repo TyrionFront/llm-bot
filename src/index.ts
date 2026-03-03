@@ -3,7 +3,6 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db, pool } from "./db/index";
 import { bot } from "./bot";
 import { syncData } from "./utils";
-import { ADMIN_ID, ADMIN_COMMANDS, USER_COMMANDS } from "./constants";
 
 if (!process.env.TELEGRAM_TOKEN) throw new Error("TELEGRAM_TOKEN is required");
 if (!process.env.ADMIN_ID) throw new Error("ADMIN_ID is required");
@@ -24,27 +23,6 @@ setInterval(async () => {
     console.log("[cron] Running scheduled sync...");
     await syncData();
 }, SYNC_INTERVAL_MS);
-
-await bot.api.setMyCommands(USER_COMMANDS);
-await bot.api.setChatMenuButton({ menu_button: { type: "commands" } });
-
-try {
-    await bot.api.setMyCommands(ADMIN_COMMANDS, {
-        scope: { type: "chat", chat_id: ADMIN_ID },
-    });
-    await bot.api.setChatMenuButton({
-        chat_id: ADMIN_ID,
-        menu_button: { type: "commands" },
-    });
-} catch {
-    console.warn(
-        "[bot] Admin chat not found — send /start to the bot as admin to register admin commands.",
-    );
-}
-
-await bot.api.setWebhook(process.env.WEBHOOK_URL, {
-    secret_token: process.env.WEBHOOK_SECRET_TOKEN,
-});
 
 const handleUpdate = webhookCallback(bot, "bun", {
     secretToken: process.env.WEBHOOK_SECRET_TOKEN,

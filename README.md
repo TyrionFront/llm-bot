@@ -1,5 +1,7 @@
 # 🤖 LLM Ratings Bot (2026 Edition)
 
+> Find the bot on Telegram: **[@yak_tam_ei_ai_bot](https://t.me/yak_tam_ei_ai_bot)**
+
 A high-performance Telegram bot built with **Bun**, **Drizzle ORM**, and **Postgres 17**, deployed on **Render** via Docker.
 
 ## 🛠 Tech Stack
