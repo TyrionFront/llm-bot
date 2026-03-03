@@ -9,7 +9,8 @@ if (!process.env.TELEGRAM_TOKEN) throw new Error("TELEGRAM_TOKEN is required");
 if (!process.env.ADMIN_ID) throw new Error("ADMIN_ID is required");
 if (!process.env.GEMINI_KEY) throw new Error("GEMINI_KEY is required");
 if (!process.env.WEBHOOK_URL) throw new Error("WEBHOOK_URL is required");
-if (!process.env.WEBHOOK_SECRET_TOKEN) throw new Error("WEBHOOK_SECRET_TOKEN is required");
+if (!process.env.WEBHOOK_SECRET_TOKEN)
+    throw new Error("WEBHOOK_SECRET_TOKEN is required");
 
 if (process.env.NODE_ENV === "development") {
     console.log("[db] Running migrations...");
@@ -25,17 +26,21 @@ setInterval(async () => {
 }, SYNC_INTERVAL_MS);
 
 await bot.api.setMyCommands(USER_COMMANDS);
-await bot.api.setMyCommands(ADMIN_COMMANDS, {
-    scope: { type: "chat", chat_id: ADMIN_ID },
-});
+await bot.api.setChatMenuButton({ menu_button: { type: "commands" } });
 
-await bot.api.setChatMenuButton({
-    menu_button: { type: "commands" },
-});
-await bot.api.setChatMenuButton({
-    chat_id: ADMIN_ID,
-    menu_button: { type: "commands" },
-});
+try {
+    await bot.api.setMyCommands(ADMIN_COMMANDS, {
+        scope: { type: "chat", chat_id: ADMIN_ID },
+    });
+    await bot.api.setChatMenuButton({
+        chat_id: ADMIN_ID,
+        menu_button: { type: "commands" },
+    });
+} catch {
+    console.warn(
+        "[bot] Admin chat not found — send /start to the bot as admin to register admin commands.",
+    );
+}
 
 await bot.api.setWebhook(process.env.WEBHOOK_URL, {
     secret_token: process.env.WEBHOOK_SECRET_TOKEN,

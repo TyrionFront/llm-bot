@@ -20,6 +20,7 @@ export default [
             "space-infix-ops": "error",
             "no-multi-spaces": "error",
             "semi": ["error", "always"],
+            "quotes": ["error", "double", { "avoidEscape": true }],
         },
     },
 ]
