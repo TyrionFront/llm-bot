@@ -7,8 +7,8 @@ A high-performance Telegram bot built with **Bun**, **Drizzle ORM**, and **Postg
 ## 🛠 Tech Stack
 
 -   **Runtime:** [Bun 1.3.9](https://bun.sh)
--   **Database:** Managed PostgreSQL (Render "pet-db")
--   **Hosting:** [Render.com](https://render.com) (Hobby Plan)
+-   **Database:** Managed PostgreSQL (Railway)
+-   **Hosting:** [Railway.com](https://railway.com)
 -   **Infrastructure:** Docker Multi-stage Builds
 -   **Bot Framework:** [grammY](https://grammy.dev)
 
@@ -41,6 +41,7 @@ PGPORT=5432
 PGDATABASE=db
 PGUSERNAME=postgres
 PGPASSWORD=postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/db
 TELEGRAM_TOKEN=your_bot_token_here
 ADMIN_ID=your_telegram_numeric_id
 GEMINI_KEY=your_google_ai_key
@@ -89,9 +90,33 @@ bun run db:migrate
 
 ---
 
-## 🧹 Linting
+## 🧹 Linting & Type Checking
 
 ```bash
 bun run lint        # Check
 bun run lint:fix    # Auto-fix
+bun run typecheck   # Run TypeScript type checking
 ```
+
+---
+
+## 🧪 Testing
+
+Tests are located in the `tests/` directory and run against a local PostgreSQL container (port `5433`).
+
+```bash
+# Start a local test PostgreSQL container
+bun run setup-local-postgres
+
+# Run all tests (starts/stops the container automatically)
+bun run test
+
+# Tear down the test container manually
+bun run shutdown-local-postgres
+```
+
+> `bun run test` orchestrates the full lifecycle via `scripts/run-tests.sh`: spins up a fresh Postgres container, runs migrations, executes `bun test tests/`, and tears everything down on exit.
+
+### CI
+
+Tests run automatically on every **push** and **pull request** via GitHub Actions (`.github/workflows/test.yml`).
