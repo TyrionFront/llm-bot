@@ -5,6 +5,9 @@
         "dockerfilePath": "Dockerfile"
     },
     "deploy": {
+        "preDeployCommand": "bun run db:migrate",
+        "healthcheckPath": "/",
+        "healthcheckTimeout": 120,
         "runtime": "V2",
         "numReplicas": 1,
         "sleepApplication": false,

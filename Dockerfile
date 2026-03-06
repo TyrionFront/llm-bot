@@ -16,4 +16,4 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 USER bun
 EXPOSE 10000
-CMD ["sh", "-c", "bun run src/db/migrate.ts && bun run src/index.ts"]
+CMD ["bun", "run", "src/index.ts"]
