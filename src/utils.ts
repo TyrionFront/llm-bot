@@ -31,7 +31,7 @@ import type {
     SweBenchResults,
 } from "./types";
 
-const errorTrack = new ErrorUtility(
+export const errorTrack = new ErrorUtility(
     "bot-app",
     process.env.TRY_CATCH_CLOUD_API_KEY!,
 );
