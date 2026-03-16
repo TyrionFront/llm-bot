@@ -153,7 +153,13 @@ export async function handleTools(ctx: CommandContext<Context>): Promise<void> {
  */
 export async function handleSync(ctx: CommandContext<Context>): Promise<void> {
     if (ctx.from?.id !== ADMIN_ID) return;
-    await syncData(ctx);
+    try {
+        await syncData(ctx);
+    } catch (e) {
+        console.error("[/sync]", e);
+        await errorTrack.sendError(e, { handler: "/sync" });
+        await ctx.reply("❌ Sync failed. Check logs.");
+    }
 }
 
 /**
