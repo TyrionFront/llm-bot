@@ -45,13 +45,3 @@ try {
         "[bot] Admin chat not found — send /start to the bot as admin to register admin commands.",
     );
 }
-
-try {
-    await bot.api.setWebhook(process.env.WEBHOOK_URL!, {
-        secret_token: process.env.WEBHOOK_SECRET_TOKEN,
-    });
-} catch (e) {
-    throw new Error(
-        `[bot] Failed to register webhook: ${e instanceof Error ? e.message : String(e)}`,
-    );
-}

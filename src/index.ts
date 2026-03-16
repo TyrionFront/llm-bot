@@ -19,6 +19,16 @@ if (process.env.NODE_ENV === "development") {
     console.log("[db] Migrations up to date.");
 }
 
+try {
+    await bot.api.setWebhook(process.env.WEBHOOK_URL!, {
+        secret_token: process.env.WEBHOOK_SECRET_TOKEN,
+    });
+    console.log("[bot] Webhook registered.");
+} catch (e) {
+    console.error("[bot] Failed to register webhook:", e);
+    throw e;
+}
+
 const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 setInterval(async () => {
