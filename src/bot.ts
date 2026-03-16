@@ -25,8 +25,12 @@ bot.command("tools", handleTools);
 bot.command("sync", handleSync);
 bot.on("message:text", handleMessageText);
 
-await bot.api.setMyCommands(USER_COMMANDS);
-await bot.api.setChatMenuButton({ menu_button: { type: "commands" } });
+try {
+    await bot.api.setMyCommands(USER_COMMANDS);
+    await bot.api.setChatMenuButton({ menu_button: { type: "commands" } });
+} catch (e) {
+    console.error("[bot] Failed to set user commands:", e);
+}
 
 try {
     await bot.api.setMyCommands(ADMIN_COMMANDS, {
@@ -42,6 +46,12 @@ try {
     );
 }
 
-await bot.api.setWebhook(process.env.WEBHOOK_URL!, {
-    secret_token: process.env.WEBHOOK_SECRET_TOKEN,
-});
+try {
+    await bot.api.setWebhook(process.env.WEBHOOK_URL!, {
+        secret_token: process.env.WEBHOOK_SECRET_TOKEN,
+    });
+} catch (e) {
+    throw new Error(
+        `[bot] Failed to register webhook: ${e instanceof Error ? e.message : String(e)}`,
+    );
+}

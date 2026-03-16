@@ -42,9 +42,12 @@ PGDATABASE=db
 PGUSERNAME=postgres
 PGPASSWORD=postgres
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/db
+PGSSL=false                        # Set to "true" to enable SSL for the DB connection
+PGSSL_REJECT_UNAUTHORIZED=true     # Set to "false" only if using a self-signed cert (e.g. staging). Requires PGSSL=true
 TELEGRAM_TOKEN=your_bot_token_here
 ADMIN_ID=your_telegram_numeric_id
 GEMINI_KEY=your_google_ai_key
+TRY_CATCH_CLOUD_API_KEY=your_try_catch_cloud_key
 WEBHOOK_URL=https://<your-ngrok-subdomain>.ngrok-free.app
 WEBHOOK_SECRET_TOKEN=your_secret_token
 ```
@@ -74,6 +77,16 @@ This starts:
 
 ```bash
 bun run dev
+```
+
+---
+
+## 🔌 Graceful Shutdown
+
+On `SIGINT`/`SIGTERM` the bot server and DB connection pool are closed. The Telegram webhook registration is intentionally **not deleted** on shutdown to preserve connectivity during rolling restarts. To deregister the webhook manually (e.g. permanent teardown), run:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_TOKEN>/deleteWebhook"
 ```
 
 ---

@@ -2,17 +2,57 @@ import { desc, eq } from "drizzle-orm";
 import type { Context } from "grammy";
 import { ErrorUtility } from "try-catch-cloud";
 import { db } from "./db/index";
-import { geminiCounters, llmRegistry, techRegistry, userStats, users } from "./db/schema";
-import { ADMIN_ID, GEMINI_RPM, GEMINI_RPD, GITHUB_REPOS_URL, LMARENA_CATEGORY, LMARENA_LEADERBOARD_URL, OPENROUTER_MODELS_URL, SWEBENCH_EXPERIMENTS_URL, SWEBENCH_VERIFIED_TOTAL, TELEGRAM_MAX_LENGTH, TOP_MODELS_LIMIT } from "./constants";
+import {
+    geminiCounters,
+    llmRegistry,
+    techRegistry,
+    userStats,
+    users,
+} from "./db/schema";
+import {
+    ADMIN_ID,
+    GEMINI_RPM,
+    GEMINI_RPD,
+    GITHUB_REPOS_URL,
+    LMARENA_CATEGORY,
+    LMARENA_LEADERBOARD_URL,
+    OPENROUTER_MODELS_URL,
+    SWEBENCH_EXPERIMENTS_URL,
+    SWEBENCH_VERIFIED_TOTAL,
+    TELEGRAM_MAX_LENGTH,
+    TOP_MODELS_LIMIT,
+} from "./constants";
 import { VENDOR_PREFIX_MAP } from "./maps";
-import type { GitHubRepo, LmarenaLeaderboard, OpenRouterResponse, RateLimitResult, SweBenchResults } from "./types";
+import type {
+    GitHubRepo,
+    LmarenaLeaderboard,
+    OpenRouterResponse,
+    RateLimitResult,
+    SweBenchResults,
+} from "./types";
 
-export const errorTrack = new ErrorUtility("bot-app", process.env.TRY_CATCH_CLOUD_API_KEY!);
+const errorTrack = new ErrorUtility(
+    "bot-app",
+    process.env.TRY_CATCH_CLOUD_API_KEY!,
+);
+
+export async function safeTrackError(
+    e: unknown,
+    context: Record<string, unknown>,
+): Promise<void> {
+    try {
+        await errorTrack.sendError(e, context);
+    } catch (trackErr) {
+        console.error("[errorTrack] Failed to send error:", trackErr);
+    }
+}
 
 /** Returns a `Date` for the start of the next UTC day. */
 function nextUtcMidnight(): Date {
     const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+    );
 }
 
 /**
@@ -32,10 +72,10 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
 
         if (!row) {
             await tx.insert(geminiCounters).values({
-                id:         1,
-                rpmCount:   1,
+                id: 1,
+                rpmCount: 1,
                 rpmResetAt: new Date(now.getTime() + 60_000),
-                rpdCount:   1,
+                rpdCount: 1,
                 rpdResetAt: nextUtcMidnight(),
             });
             return { allowed: true };
@@ -53,16 +93,30 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
         }
 
         if (rpdCount >= GEMINI_RPD) {
-            return { allowed: false, reason: "Daily AI request limit reached. Try again tomorrow." };
+            return {
+                allowed: false,
+                reason: "Daily AI request limit reached. Try again tomorrow.",
+            };
         }
 
         if (rpmCount >= GEMINI_RPM) {
-            const secsLeft = Math.ceil((rpmResetAt.getTime() - now.getTime()) / 1000);
-            return { allowed: false, reason: `Too many requests. Please wait ${secsLeft}s and try again.` };
+            const secsLeft = Math.ceil(
+                (rpmResetAt.getTime() - now.getTime()) / 1000,
+            );
+            return {
+                allowed: false,
+                reason: `Too many requests. Please wait ${secsLeft}s and try again.`,
+            };
         }
 
-        await tx.update(geminiCounters)
-            .set({ rpmCount: rpmCount + 1, rpmResetAt, rpdCount: rpdCount + 1, rpdResetAt })
+        await tx
+            .update(geminiCounters)
+            .set({
+                rpmCount: rpmCount + 1,
+                rpmResetAt,
+                rpdCount: rpdCount + 1,
+                rpdResetAt,
+            })
             .where(eq(geminiCounters.id, 1));
 
         return { allowed: true };
@@ -81,7 +135,8 @@ export async function logUserActivity(ctx: Context): Promise<void> {
     const username = ctx.from?.username ?? null;
 
     try {
-        await db.insert(users)
+        await db
+            .insert(users)
             .values({
                 userId,
                 username,
@@ -94,11 +149,11 @@ export async function logUserActivity(ctx: Context): Promise<void> {
 
         await db.insert(userStats).values({
             usersId: userId,
-            input:   ctx.message?.text ?? null,
+            input: ctx.message?.text ?? null,
         });
     } catch (e) {
         console.error("[logUserActivity]", e);
-        await errorTrack.sendError(e, { function: "logUserActivity", userId });
+        await safeTrackError(e, { function: "logUserActivity", userId });
     }
 }
 
@@ -108,7 +163,10 @@ export async function logUserActivity(ctx: Context): Promise<void> {
  * @param userId - The Telegram user ID of the message author.
  * @param response - The AI-generated response text to persist.
  */
-export async function saveGeminiResponse(userId: number, response: string): Promise<void> {
+export async function saveGeminiResponse(
+    userId: number,
+    response: string,
+): Promise<void> {
     try {
         const [latestStat] = await db
             .select({ id: userStats.id })
@@ -119,12 +177,13 @@ export async function saveGeminiResponse(userId: number, response: string): Prom
 
         if (!latestStat) return;
 
-        await db.update(userStats)
+        await db
+            .update(userStats)
             .set({ response, updatedAt: new Date() })
             .where(eq(userStats.id, latestStat.id));
     } catch (e) {
         console.error("[saveGeminiResponse]", e);
-        await errorTrack.sendError(e, { function: "saveGeminiResponse", userId });
+        await safeTrackError(e, { function: "saveGeminiResponse", userId });
     }
 }
 
@@ -139,17 +198,22 @@ async function syncLLMs(): Promise<string[]> {
 
     const res = await fetch(OPENROUTER_MODELS_URL);
     if (!res.ok) throw new Error(`OpenRouter API error: ${res.status}`);
-    const { data: models } = await res.json() as OpenRouterResponse;
+    const { data: models } = (await res.json()) as OpenRouterResponse;
     const modelMap = new Map(models.map((m) => [m.id, m]));
 
-    const entries = await db.select().from(llmRegistry).orderBy(desc(llmRegistry.eloRating)).limit(TOP_MODELS_LIMIT);
+    const entries = await db
+        .select()
+        .from(llmRegistry)
+        .orderBy(desc(llmRegistry.eloRating))
+        .limit(TOP_MODELS_LIMIT);
     for (const entry of entries) {
         if (!entry.syncId || !modelMap.has(entry.syncId)) {
             continue;
         }
-        await db.update(llmRegistry)
+        await db
+            .update(llmRegistry)
             .set({
-                pricingUrl:  `https://openrouter.ai/${entry.syncId}`,
+                pricingUrl: `https://openrouter.ai/${entry.syncId}`,
                 lastUpdated: new Date(),
             })
             .where(eq(llmRegistry.modelId, entry.modelId));
@@ -184,15 +248,21 @@ async function syncELO(): Promise<string[]> {
 
     const res = await fetch(LMARENA_LEADERBOARD_URL);
     if (!res.ok) throw new Error(`lmarena API error: ${res.status}`);
-    const data = await res.json() as LmarenaLeaderboard;
+    const data = (await res.json()) as LmarenaLeaderboard;
     const categoryData = data[LMARENA_CATEGORY];
 
     if (!categoryData) {
-        throw new Error(`Category "${LMARENA_CATEGORY}" not found in lmarena leaderboard`);
+        throw new Error(
+            `Category "${LMARENA_CATEGORY}" not found in lmarena leaderboard`,
+        );
     }
 
     const entries = await db.select().from(llmRegistry);
-    const knownLmarenaIds = new Set(entries.map((e) => e.lmarenaId).filter((id): id is string => id !== null));
+    const knownLmarenaIds = new Set(
+        entries
+            .map((e) => e.lmarenaId)
+            .filter((id): id is string => id !== null),
+    );
 
     for (const entry of entries) {
         if (!entry.lmarenaId) {
@@ -202,8 +272,12 @@ async function syncELO(): Promise<string[]> {
         if (!modelData) {
             continue;
         }
-        await db.update(llmRegistry)
-            .set({ eloRating: Math.round(modelData.rating), lastUpdated: new Date() })
+        await db
+            .update(llmRegistry)
+            .set({
+                eloRating: Math.round(modelData.rating),
+                lastUpdated: new Date(),
+            })
             .where(eq(llmRegistry.modelId, entry.modelId));
     }
 
@@ -211,10 +285,10 @@ async function syncELO(): Promise<string[]> {
         if (knownLmarenaIds.has(lmarenaId)) continue;
         const vendor = inferVendor(lmarenaId);
         await db.insert(llmRegistry).values({
-            modelId:      lmarenaId,
+            modelId: lmarenaId,
             vendor,
             lmarenaId,
-            eloRating:    Math.round(modelData.rating),
+            eloRating: Math.round(modelData.rating),
             ratingSource: "lmarena.ai",
         });
         logs.push(`✅ New model inserted: ${lmarenaId} (${vendor})`);
@@ -237,7 +311,9 @@ async function syncTech(): Promise<string[]> {
 
     const githubEntries = entries.filter((e) => e.syncSource === "github");
     const sweBenchEntries = entries.filter((e) => e.syncSource === "swe-bench");
-    const unknownEntries = entries.filter((e) => e.syncSource !== "github" && e.syncSource !== "swe-bench");
+    const unknownEntries = entries.filter(
+        (e) => e.syncSource !== "github" && e.syncSource !== "swe-bench",
+    );
 
     for (const e of unknownEntries) {
         logs.push(`⚠️ Unknown sync_source "${e.syncSource}" for ${e.entryId}`);
@@ -250,12 +326,15 @@ async function syncTech(): Promise<string[]> {
         }
         const res = await fetch(`${GITHUB_REPOS_URL}/${entry.syncId}`);
         if (!res.ok) {
-            logs.push(`⚠️ GitHub API error for ${entry.entryId}: ${res.status}`);
+            logs.push(
+                `⚠️ GitHub API error for ${entry.entryId}: ${res.status}`,
+            );
             continue;
         }
-        const repo = await res.json() as GitHubRepo;
+        const repo = (await res.json()) as GitHubRepo;
         const kStars = parseFloat((repo.stargazers_count / 1000).toFixed(1));
-        await db.update(techRegistry)
+        await db
+            .update(techRegistry)
             .set({ score: kStars, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
     }
@@ -265,14 +344,19 @@ async function syncTech(): Promise<string[]> {
             logs.push(`⚠️ Missing SWE-bench run ID for ${entry.entryId}`);
             continue;
         }
-        const res = await fetch(`${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`);
+        const res = await fetch(
+            `${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`,
+        );
         if (!res.ok) {
-            logs.push(`⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`);
+            logs.push(
+                `⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`,
+            );
             continue;
         }
-        const data = await res.json() as SweBenchResults;
+        const data = (await res.json()) as SweBenchResults;
         const score = data.resolved.length / SWEBENCH_VERIFIED_TOTAL;
-        await db.update(techRegistry)
+        await db
+            .update(techRegistry)
             .set({ score, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
     }
@@ -291,26 +375,36 @@ export async function syncData(ctx?: Context): Promise<void> {
     let techCount = 0;
 
     try {
-        const llmEntries = await db.select({ modelId: llmRegistry.modelId }).from(llmRegistry);
+        const llmEntries = await db
+            .select({ modelId: llmRegistry.modelId })
+            .from(llmRegistry);
         llmCount = llmEntries.length;
         const llmLogs = await syncLLMs();
         const eloLogs = await syncELO();
         allLogs.push(...llmLogs, ...eloLogs);
     } catch (e) {
         console.error("[syncData][llms]", e);
-        await errorTrack.sendError(e, { function: "syncData", phase: "llms" });
-        allLogs.push(`❌ LLM sync failed: ${e instanceof Error ? e.message : String(e)}`);
+        await safeTrackError(e, { function: "syncData", phase: "llms" });
+        allLogs.push(
+            `❌ LLM sync failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
     }
 
     try {
-        const techEntries = await db.select({ entryId: techRegistry.entryId }).from(techRegistry);
+        const techEntries = await db
+            .select({ entryId: techRegistry.entryId })
+            .from(techRegistry);
         techCount = techEntries.length;
         const techLogs = await syncTech();
         allLogs.push(...techLogs);
     } catch (e) {
         console.error("[syncData][tech]", e);
-        await errorTrack.sendError(e, { function: "syncData", phase: "tech" });
-        allLogs.push(`❌ Tech sync failed: ${e instanceof Error ? e.message : String(e)}`);
+        await safeTrackError(e, { function: "syncData", phase: "tech" });
+        allLogs.push(
+            `❌ Tech sync failed: ${
+                e instanceof Error ? e.message : String(e)
+            }`,
+        );
     }
 
     const total = llmCount + techCount;
@@ -329,7 +423,7 @@ export async function syncData(ctx?: Context): Promise<void> {
             }
         } catch (e) {
             console.error("[syncData] Failed to send reply:", e);
-            await errorTrack.sendError(e, { function: "syncData", phase: "reply" });
+            await safeTrackError(e, { function: "syncData", phase: "reply" });
         }
     }
 }
