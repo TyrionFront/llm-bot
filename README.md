@@ -133,3 +133,7 @@ bun run shutdown-local-postgres
 ### CI
 
 Tests run automatically on every **push** and **pull request** via GitHub Actions (`.github/workflows/test.yml`).
+
+Every push to `dev` automatically opens a pull request to `main` via `.github/workflows/promote.yml`.
+
+> **Required repo setting:** Settings → Actions → General → Workflow permissions → enable **"Allow GitHub Actions to create and approve pull requests"**.
