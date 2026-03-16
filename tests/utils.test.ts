@@ -136,7 +136,7 @@ describe("syncData", () => {
         const ctx = createMockCtx();
         await syncData(ctx);
 
-        const [text] = ctx.reply.mock.calls[0] as [string];
+        const [text] = ctx.reply.mock.calls[1] as [string];
         expect(text).toMatch(/LLM sync failed/);
     });
 });
