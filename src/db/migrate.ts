@@ -7,7 +7,8 @@ try {
     console.log("Migrations applied successfully.");
 } catch (err) {
     console.error("Migration failed:", err);
+    await pool.end().catch((e) => console.error("Pool close failed:", e));
     process.exit(1);
-} finally {
-    await pool.end();
 }
+
+await pool.end().catch((e) => console.error("Pool close failed:", e));
