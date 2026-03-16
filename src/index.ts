@@ -45,7 +45,6 @@ console.log(`🚀 Specialist Bot is Online (webhook) on port ${PORT}.`);
 
 const shutdown = async () => {
     server.stop();
-    await bot.api.deleteWebhook();
     await pool.end();
 };
 

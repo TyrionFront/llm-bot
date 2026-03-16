@@ -12,7 +12,7 @@ import {
     TOP_MODELS_LIMIT,
     USER_COMMAND_LINES,
 } from "./constants";
-import { checkAndIncrementGeminiLimit, errorTrack, saveGeminiResponse, syncData } from "./utils";
+import { checkAndIncrementGeminiLimit, safeTrackError, saveGeminiResponse, syncData } from "./utils";
 import type { GeminiErrorResponse, GeminiResponse } from "./types";
 
 const DATA_SOURCES =
@@ -75,7 +75,7 @@ export async function handleRatings(ctx: CommandContext<Context>): Promise<void>
         });
     } catch (e) {
         console.error("[/ratings]", e);
-        await errorTrack.sendError(e, { handler: "/ratings" });
+        await safeTrackError(e, { handler: "/ratings" });
         await ctx.reply("❌ Failed to fetch leaderboard.");
     }
 }
@@ -100,7 +100,7 @@ export async function handlePricing(ctx: CommandContext<Context>): Promise<void>
         await ctx.reply("💰 Official Pricing Portals:", { reply_markup: keyboard });
     } catch (e) {
         console.error("[/pricing]", e);
-        await errorTrack.sendError(e, { handler: "/pricing" });
+        await safeTrackError(e, { handler: "/pricing" });
         await ctx.reply("❌ Failed to fetch pricing.");
     }
 }
@@ -142,7 +142,7 @@ export async function handleTools(ctx: CommandContext<Context>): Promise<void> {
         });
     } catch (e) {
         console.error("[/tools]", e);
-        await errorTrack.sendError(e, { handler: "/tools" });
+        await safeTrackError(e, { handler: "/tools" });
         await ctx.reply("❌ Failed to fetch tools leaderboard.");
     }
 }
@@ -157,7 +157,7 @@ export async function handleSync(ctx: CommandContext<Context>): Promise<void> {
         await syncData(ctx);
     } catch (e) {
         console.error("[/sync]", e);
-        await errorTrack.sendError(e, { handler: "/sync" });
+        await safeTrackError(e, { handler: "/sync" });
         await ctx.reply("❌ Sync failed. Check logs.");
     }
 }
@@ -207,7 +207,7 @@ export async function handleMessageText(ctx: Filter<Context, "message:text">): P
         await saveGeminiResponse(ctx.from.id, aiText);
     } catch (e) {
         console.error("[gemini]", e);
-        await errorTrack.sendError(e, { handler: "message:text", userId: ctx.from?.id });
+        await safeTrackError(e, { handler: "message:text", userId: ctx.from?.id });
         await ctx.reply("❌ AI response failed. Try again later.");
     }
 }

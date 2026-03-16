@@ -7,7 +7,9 @@ export const pool = new Pool({
     database: process.env.PGDATABASE,
     user: process.env.PGUSERNAME,
     password: process.env.PGPASSWORD,
-    ssl: false,
+    ssl: process.env.PGSSL === "true"
+        ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" }
+        : false,
 });
 
 export const db = drizzle(pool);
