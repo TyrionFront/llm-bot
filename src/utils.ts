@@ -319,12 +319,17 @@ export async function syncData(ctx?: Context): Promise<void> {
     console.log(`[syncData] ${summary}`);
 
     if (ctx) {
-        await ctx.reply(summary);
-        if (allLogs.length > 0) {
-            const chunks = chunkLines(allLogs, TELEGRAM_MAX_LENGTH);
-            for (const chunk of chunks) {
-                await ctx.reply(chunk);
+        try {
+            await ctx.reply(summary);
+            if (allLogs.length > 0) {
+                const chunks = chunkLines(allLogs, TELEGRAM_MAX_LENGTH);
+                for (const chunk of chunks) {
+                    await ctx.reply(chunk);
+                }
             }
+        } catch (e) {
+            console.error("[syncData] Failed to send reply:", e);
+            await errorTrack.sendError(e, { function: "syncData", phase: "reply" });
         }
     }
 }
