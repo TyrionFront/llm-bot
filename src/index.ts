@@ -10,6 +10,8 @@ if (!process.env.GEMINI_KEY) throw new Error("GEMINI_KEY is required");
 if (!process.env.WEBHOOK_URL) throw new Error("WEBHOOK_URL is required");
 if (!process.env.WEBHOOK_SECRET_TOKEN)
     throw new Error("WEBHOOK_SECRET_TOKEN is required");
+if (!process.env.TRY_CATCH_CLOUD_API_KEY)
+    throw new Error("TRY_CATCH_CLOUD_API_KEY is required");
 
 if (process.env.NODE_ENV === "development") {
     console.log("[db] Running migrations...");

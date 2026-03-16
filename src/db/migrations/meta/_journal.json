@@ -36,6 +36,20 @@
       "when": 1772368196996,
       "tag": "0004_user_stats_users_id_to_telegram_id",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772368196997,
+      "tag": "0005_llm_registry_lmarena_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1772368196998,
+      "tag": "0006_populate_lmarena_ids",
+      "breakpoints": true
     }
   ]
 }

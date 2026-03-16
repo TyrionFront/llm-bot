@@ -1,6 +1,10 @@
 export const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_KEY}`;
 export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 export const GITHUB_REPOS_URL = "https://api.github.com/repos";
+export const LMARENA_LEADERBOARD_URL = "https://raw.githubusercontent.com/lmarena/arena-catalog/main/data/leaderboard-text.json";
+export const LMARENA_CATEGORY = "english";
+export const SWEBENCH_EXPERIMENTS_URL = "https://raw.githubusercontent.com/swe-bench/experiments/main/evaluation/verified";
+export const SWEBENCH_VERIFIED_TOTAL = 500;
 
 export const USER_COMMANDS = [
     { command: "start", description: "Show bot info & available commands" },
@@ -29,6 +33,8 @@ export const CATEGORY_LABEL: Record<string, string> = {
     platform:  "🛠 Platform",
 };
 
+export const TELEGRAM_MAX_LENGTH = 4096;
+export const TOP_MODELS_LIMIT = 10;
 export const GEMINI_RPM = 5;
 export const GEMINI_RPD = 20;
 export const ADMIN_ID = Number(process.env.ADMIN_ID);

@@ -1,35 +1,36 @@
 {
-  "name": "bot-app",
-  "module": "index.ts",
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/node": "^25.3.1",
-    "@types/pg": "^8.18.0",
-    "@typescript-eslint/eslint-plugin": "^8.56.1",
-    "@typescript-eslint/parser": "^8.56.1",
-    "drizzle-kit": "^0.31.9",
-    "eslint": "^10.0.2"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "private": true,
-  "scripts": {
-    "dev": "bun --hot ./src/index.ts",
-    "start": "bun run ./src/index.ts",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run ./src/db/migrate.ts",
-    "lint": "eslint \"src/**/*.ts\"",
-    "lint:fix": "eslint \"src/**/*.ts\" --fix",
-    "typecheck": "tsc --noEmit",
-    "test": "bash scripts/run-tests.sh",
-    "setup-local-postgres": "docker run --name bot-app-test-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=bot_app_test -p 5433:5432 -d postgres",
-    "shutdown-local-postgres": "docker stop bot-app-test-postgres && docker rm bot-app-test-postgres && docker volume prune -f"
-  },
-  "type": "module",
-  "dependencies": {
-    "drizzle-orm": "^0.45.1",
-    "grammy": "^1.40.1",
-    "pg": "^8.19.0"
-  }
+    "name": "bot-app",
+    "module": "index.ts",
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/node": "^25.3.1",
+        "@types/pg": "^8.18.0",
+        "@typescript-eslint/eslint-plugin": "^8.56.1",
+        "@typescript-eslint/parser": "^8.56.1",
+        "drizzle-kit": "^0.31.9",
+        "eslint": "^10.0.2"
+    },
+    "peerDependencies": {
+        "typescript": "^5"
+    },
+    "private": true,
+    "scripts": {
+        "dev": "bun --hot ./src/index.ts",
+        "start": "bun run ./src/index.ts",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "bun run ./src/db/migrate.ts",
+        "lint": "eslint \"src/**/*.ts\"",
+        "lint:fix": "eslint \"src/**/*.ts\" --fix",
+        "typecheck": "tsc --noEmit",
+        "test": "bash scripts/run-tests.sh",
+        "setup-local-postgres": "docker run --name bot-app-test-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=bot_app_test -p 5433:5432 -d postgres",
+        "shutdown-local-postgres": "docker stop bot-app-test-postgres && docker rm bot-app-test-postgres && docker volume prune -f"
+    },
+    "type": "module",
+    "dependencies": {
+        "drizzle-orm": "^0.45.1",
+        "grammy": "^1.40.1",
+        "pg": "^8.19.0",
+        "try-catch-cloud": "^1.0.55"
+    }
 }
