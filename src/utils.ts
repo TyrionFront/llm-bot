@@ -373,6 +373,7 @@ export async function syncData(ctx?: Context): Promise<void> {
     const allLogs: string[] = [];
     let llmCount = 0;
     let techCount = 0;
+    let failureCount = 0;
 
     try {
         const llmEntries = await db
@@ -388,6 +389,7 @@ export async function syncData(ctx?: Context): Promise<void> {
         allLogs.push(
             `❌ LLM sync failed: ${e instanceof Error ? e.message : String(e)}`,
         );
+        failureCount += llmCount;
     }
 
     try {
@@ -405,10 +407,11 @@ export async function syncData(ctx?: Context): Promise<void> {
                 e instanceof Error ? e.message : String(e)
             }`,
         );
+        failureCount += techCount;
     }
 
     const total = llmCount + techCount;
-    const synced = total - allLogs.length;
+    const synced = total - failureCount;
     const summary = `🔄 Sync complete. ${synced}/${total} entries updated.`;
     console.log(`[syncData] ${summary}`);
 
