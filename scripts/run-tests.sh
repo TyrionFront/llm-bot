@@ -10,6 +10,7 @@ export DATABASE_URL="postgres://postgres:postgres@0.0.0.0:5433/bot_app_test"
 export ADMIN_ID="100"
 export GEMINI_KEY="test-gemini-key"
 export TELEGRAM_TOKEN="test-token"
+export TRY_CATCH_CLOUD_API_KEY="test-key"
 
 cleanup() {
     echo "Shutting down test container..."
