@@ -20,7 +20,7 @@ export const bot = new Bot(process.env.TELEGRAM_TOKEN!);
 
 /** Middleware: logs every incoming message with user info and input text. */
 bot.use(async (ctx, next) => {
-    await logUserActivity(ctx);
+    void logUserActivity(ctx);
     await next();
 });
 
