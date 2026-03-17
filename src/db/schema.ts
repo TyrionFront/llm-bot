@@ -8,8 +8,9 @@ export const llmRegistry = pgTable("llm_registry", {
     eloRating:    integer("elo_rating"),
     pricingUrl:   text("pricing_url"),
     syncId:       text("sync_id"),
-    lmarenaId:    text("lmarena_id"),
-    ratingSource: text("rating_source"),
+    lmarenaId:       text("lmarena_id"),
+    lmarenaCategory: text("lmarena_category"),
+    ratingSource:    text("rating_source"),
     lastUpdated:  timestamp("last_updated").defaultNow(),
 });
 
