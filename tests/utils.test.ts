@@ -103,10 +103,10 @@ describe("syncData", () => {
 
         await syncData(ctx);
 
-        expect(ctx.reply).toHaveBeenCalledTimes(1);
+        expect(ctx.reply).toHaveBeenCalledTimes(2);
         const [text] = ctx.reply.mock.calls[0] as [string];
         expect(text).toMatch(/Sync complete/);
-        expect(text).toMatch(/\d+\/\d+ entries updated/);
+        expect(text).toMatch(/\d+ entries displayed/);
     });
 
     it("updates tech registry scores from GitHub API", async () => {

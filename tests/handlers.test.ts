@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { handleMessageText, handlePricing, handleRatings, handleStart, handleSync, handleTools } from "../src/handlers";
 import { syncData } from "../src/utils";
 import { GEMINI_RPM } from "../src/constants";
-import { geminiCounters, users, userStats } from "../src/db/schema";
+import { geminiCounters, llmRegistry, users, userStats } from "../src/db/schema";
 import { createTestDb, type TestDb } from "./helpers/db";
 import { createMockCtx } from "./helpers/ctx";
 import { createFetchMock } from "./helpers/fetch";
@@ -81,6 +81,37 @@ describe("handleRatings", () => {
 });
 
 describe("handlePricing", () => {
+    const PRICING_TEST_IDS = ["coding/test-anthropic", "coding/test-openai"];
+
+    beforeAll(async () => {
+        await testDb.db.insert(llmRegistry).values([
+            {
+                modelId: "coding/test-anthropic",
+                vendor: "Anthropic",
+                lmarenaId: "test-anthropic",
+                lmarenaCategory: "coding",
+                eloRating: 1500,
+                ratingSource: "lmarena.ai",
+                pricingUrl: "https://openrouter.ai/anthropic/claude-test",
+            },
+            {
+                modelId: "coding/test-openai",
+                vendor: "OpenAI",
+                lmarenaId: "test-openai",
+                lmarenaCategory: "coding",
+                eloRating: 1480,
+                ratingSource: "lmarena.ai",
+                pricingUrl: "https://openrouter.ai/openai/gpt-test",
+            },
+        ]);
+    });
+
+    afterAll(async () => {
+        await testDb.db
+            .delete(llmRegistry)
+            .where(inArray(llmRegistry.modelId, PRICING_TEST_IDS));
+    });
+
     it("replies with an inline keyboard containing vendor pricing links", async () => {
         const ctx = createMockCtx();
         await handlePricing(ctx);
@@ -145,7 +176,7 @@ describe("handleSync", () => {
         const ctx = createMockCtx({ userId: ADMIN_USER_ID });
         await handleSync(ctx);
 
-        expect(ctx.reply).toHaveBeenCalledTimes(1);
+        expect(ctx.reply).toHaveBeenCalledTimes(2);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
         expect(text).toContain("Sync complete");
     });
