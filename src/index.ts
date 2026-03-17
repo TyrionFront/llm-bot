@@ -42,11 +42,16 @@ console.log("[cron] Running initial sync...");
 
 setInterval(async () => {
     console.log("[cron] Running scheduled sync...");
-    await syncData();
+    try {
+        await syncData();
+    } catch (e) {
+        console.error("[cron] Scheduled sync failed:", e);
+    }
 }, SYNC_INTERVAL_MS);
 
 const handleUpdate = webhookCallback(bot, "bun", {
     secretToken: process.env.WEBHOOK_SECRET_TOKEN,
+    onTimeout: "return",
 });
 const PORT = Number(process.env.PORT) || 3000;
 
