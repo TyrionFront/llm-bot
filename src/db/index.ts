@@ -10,6 +10,9 @@ export const pool = new Pool({
     ssl: process.env.PGSSL === "true"
         ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" }
         : false,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
 });
 
 export const db = drizzle(pool);

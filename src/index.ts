@@ -31,6 +31,15 @@ try {
 
 const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+console.log("[cron] Running initial sync...");
+(async () => {
+    try {
+        await syncData();
+    } catch (e) {
+        console.error("[cron] Initial sync failed:", e);
+    }
+})();
+
 setInterval(async () => {
     console.log("[cron] Running scheduled sync...");
     await syncData();
