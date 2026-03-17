@@ -7,8 +7,14 @@ import {
     handleTools,
     handleSync,
     handleMessageText,
+    makeRatingsByCategoryHandler,
 } from "./handlers";
-import { ADMIN_ID, ADMIN_COMMANDS, USER_COMMANDS } from "./constants";
+import {
+    ADMIN_ID,
+    ADMIN_COMMANDS,
+    LMARENA_CATEGORIES,
+    USER_COMMANDS,
+} from "./constants";
 
 export const bot = new Bot(process.env.TELEGRAM_TOKEN!);
 
@@ -23,6 +29,11 @@ bot.command("ratings", handleRatings);
 bot.command("pricing", handlePricing);
 bot.command("tools", handleTools);
 bot.command("sync", handleSync);
+
+for (const category of LMARENA_CATEGORIES) {
+    bot.command(`ratings_${category}`, makeRatingsByCategoryHandler(category));
+}
+
 bot.on("message:text", handleMessageText);
 
 try {

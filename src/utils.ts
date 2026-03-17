@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { Context } from "grammy";
 import { ErrorUtility } from "try-catch-cloud";
 import { db } from "./db/index";
@@ -14,7 +14,7 @@ import {
     GEMINI_RPM,
     GEMINI_RPD,
     GITHUB_REPOS_URL,
-    LMARENA_CATEGORY,
+    LMARENA_CATEGORIES,
     LMARENA_LEADERBOARD_URL,
     OPENROUTER_MODELS_URL,
     SWEBENCH_EXPERIMENTS_URL,
@@ -32,7 +32,7 @@ import type {
 } from "./types";
 
 export const errorTrack = new ErrorUtility(
-    "bot-app",
+    process.env.NODE_ENV === "development" ? "bot-app-local" : "bot-app",
     process.env.TRY_CATCH_CLOUD_API_KEY!,
 );
 
@@ -188,28 +188,50 @@ export async function saveGeminiResponse(
 }
 
 /**
- * Syncs LLM registry entries against the OpenRouter model list.
- * Updates `pricingUrl` to the canonical OpenRouter model page for each matched entry.
- * Logs a warning for entries with no OpenRouter match.
- * @returns Array of warning/error log lines for entries that could not be matched.
+ * Returns the set of vendors that appear in at least one top-N list across all lmarena categories.
+ * Queries each category in parallel and unions the results.
  */
-async function syncLLMs(): Promise<string[]> {
+export async function getTopListVendors(): Promise<Set<string>> {
+    const results = await Promise.all(
+        LMARENA_CATEGORIES.map((cat) =>
+            db
+                .select({ vendor: llmRegistry.vendor })
+                .from(llmRegistry)
+                .where(eq(llmRegistry.lmarenaCategory, cat))
+                .orderBy(desc(llmRegistry.eloRating))
+                .limit(TOP_MODELS_LIMIT),
+        ),
+    );
+    return new Set(results.flat().map((r) => r.vendor));
+}
+
+/**
+ * Syncs LLM registry entries against the OpenRouter model list.
+ * Only updates `pricingUrl` for vendors present in at least one top-N list.
+ * @returns Log lines and count of entries updated.
+ */
+async function syncLLMs(): Promise<{ logs: string[]; count: number }> {
     const logs: string[] = [];
+    let count = 0;
 
     const res = await fetch(OPENROUTER_MODELS_URL);
     if (!res.ok) throw new Error(`OpenRouter API error: ${res.status}`);
     const { data: models } = (await res.json()) as OpenRouterResponse;
     const modelMap = new Map(models.map((m) => [m.id, m]));
 
+    const topVendors = await getTopListVendors();
+    if (topVendors.size === 0) {
+        logs.push("⚠️ No top-list data found, skipping pricing URL sync");
+        return { logs, count };
+    }
+
     const entries = await db
         .select()
         .from(llmRegistry)
-        .orderBy(desc(llmRegistry.eloRating))
-        .limit(TOP_MODELS_LIMIT);
+        .where(inArray(llmRegistry.vendor, [...topVendors]));
+
     for (const entry of entries) {
-        if (!entry.syncId || !modelMap.has(entry.syncId)) {
-            continue;
-        }
+        if (!entry.syncId || !modelMap.has(entry.syncId)) continue;
         await db
             .update(llmRegistry)
             .set({
@@ -217,9 +239,11 @@ async function syncLLMs(): Promise<string[]> {
                 lastUpdated: new Date(),
             })
             .where(eq(llmRegistry.modelId, entry.modelId));
+        count++;
     }
 
-    return logs;
+    logs.push(`✅ ${count} pricing URLs updated`);
+    return { logs, count };
 }
 
 /**
@@ -238,63 +262,58 @@ function inferVendor(lmarenaId: string): string {
 }
 
 /**
- * Syncs ELO ratings for all LLM registry entries from the lmarena arena-catalog leaderboard.
- * Updates ELO for existing entries matched via `lmarenaId`.
- * Auto-inserts models present in lmarena but absent from the DB.
- * @returns Array of info/warning log lines produced during the sync.
+ * Syncs ELO ratings from the lmarena arena-catalog leaderboard.
+ * For every category present in the response, upserts all models by rating.
+ * Uses `{category}/{lmarenaId}` as the composite model key to support the same
+ * model appearing in multiple categories as separate rows.
+ * @returns Log lines and total count of models upserted.
  */
-async function syncELO(): Promise<string[]> {
+async function syncELO(): Promise<{ logs: string[]; count: number }> {
     const logs: string[] = [];
+    let count = 0;
 
     const res = await fetch(LMARENA_LEADERBOARD_URL);
     if (!res.ok) throw new Error(`lmarena API error: ${res.status}`);
     const data = (await res.json()) as LmarenaLeaderboard;
-    const categoryData = data[LMARENA_CATEGORY];
 
-    if (!categoryData) {
-        throw new Error(
-            `Category "${LMARENA_CATEGORY}" not found in lmarena leaderboard`,
+    for (const category of LMARENA_CATEGORIES) {
+        const models = data[category];
+        if (!models) {
+            logs.push(`⚠️ ${category}: not found in leaderboard response`);
+            continue;
+        }
+        const sortedModels = Object.entries(models).sort(
+            ([, a], [, b]) => b.rating - a.rating,
         );
-    }
 
-    const entries = await db.select().from(llmRegistry);
-    const knownLmarenaIds = new Set(
-        entries
-            .map((e) => e.lmarenaId)
-            .filter((id): id is string => id !== null),
-    );
+        for (const [lmarenaId, modelData] of sortedModels) {
+            const modelId = `${category}/${lmarenaId}`;
+            const vendor = inferVendor(lmarenaId);
 
-    for (const entry of entries) {
-        if (!entry.lmarenaId) {
-            continue;
+            await db
+                .insert(llmRegistry)
+                .values({
+                    modelId,
+                    vendor,
+                    lmarenaId,
+                    lmarenaCategory: category,
+                    eloRating: Math.round(modelData.rating),
+                    ratingSource: "lmarena.ai",
+                })
+                .onConflictDoUpdate({
+                    target: llmRegistry.modelId,
+                    set: {
+                        eloRating: Math.round(modelData.rating),
+                        lastUpdated: new Date(),
+                    },
+                });
+            count++;
         }
-        const modelData = categoryData[entry.lmarenaId];
-        if (!modelData) {
-            continue;
-        }
-        await db
-            .update(llmRegistry)
-            .set({
-                eloRating: Math.round(modelData.rating),
-                lastUpdated: new Date(),
-            })
-            .where(eq(llmRegistry.modelId, entry.modelId));
+
+        logs.push(`✅ ${category}: TOP-${TOP_MODELS_LIMIT} models synced`);
     }
 
-    for (const [lmarenaId, modelData] of Object.entries(categoryData)) {
-        if (knownLmarenaIds.has(lmarenaId)) continue;
-        const vendor = inferVendor(lmarenaId);
-        await db.insert(llmRegistry).values({
-            modelId: lmarenaId,
-            vendor,
-            lmarenaId,
-            eloRating: Math.round(modelData.rating),
-            ratingSource: "lmarena.ai",
-        });
-        logs.push(`✅ New model inserted: ${lmarenaId} (${vendor})`);
-    }
-
-    return logs;
+    return { logs, count };
 }
 
 /**
@@ -303,10 +322,11 @@ async function syncELO(): Promise<string[]> {
  * - `swe-bench`: fetches resolved instance count from the swe-bench/experiments repo;
  *                score stored as a fraction of SWEBENCH_VERIFIED_TOTAL (e.g. 0.472 = 47.2%).
  * Entries with unrecognised sync sources are logged as warnings and skipped.
- * @returns Array of warning/error log lines for entries that could not be synced.
+ * @returns Log lines and count of entries successfully updated.
  */
-async function syncTech(): Promise<string[]> {
+async function syncTech(): Promise<{ logs: string[]; count: number }> {
     const logs: string[] = [];
+    let count = 0;
     const entries = await db.select().from(techRegistry);
 
     const githubEntries = entries.filter((e) => e.syncSource === "github");
@@ -337,6 +357,8 @@ async function syncTech(): Promise<string[]> {
             .update(techRegistry)
             .set({ score: kStars, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
+        logs.push(`✅ ${entry.name}: ${kStars}k stars synced`);
+        count++;
     }
 
     for (const entry of sweBenchEntries) {
@@ -359,60 +381,62 @@ async function syncTech(): Promise<string[]> {
             .update(techRegistry)
             .set({ score, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
+        logs.push(
+            `✅ ${entry.name}: ${(score * 100).toFixed(1)}% SWE-bench synced`,
+        );
+        count++;
     }
 
-    return logs;
+    return { logs, count };
 }
 
 /**
- * Orchestrates a full data sync: LLM registry (via OpenRouter) and tech registry (via GitHub).
- * Collects logs from both sync phases and optionally replies with a summary if a context is provided.
+ * Orchestrates a full data sync: ELO ratings (lmarena), pricing URLs (OpenRouter), and tech registry.
+ * ELO is synced first so that newly inserted models are eligible for pricing URL updates.
+ * Collects logs from all phases and optionally replies with a summary if a context is provided.
  * @param ctx - Optional Grammy context; when provided, the sync summary is sent as a reply.
  */
 export async function syncData(ctx?: Context): Promise<void> {
     const allLogs: string[] = [];
-    let llmCount = 0;
-    let techCount = 0;
-    let failureCount = 0;
+    let eloSynced = false;
+    let syncedTools = 0;
 
     try {
-        const llmEntries = await db
-            .select({ modelId: llmRegistry.modelId })
-            .from(llmRegistry);
-        llmCount = llmEntries.length;
-        const llmLogs = await syncLLMs();
-        const eloLogs = await syncELO();
-        allLogs.push(...llmLogs, ...eloLogs);
+        const { logs: eloLogs } = await syncELO();
+        const { logs: llmLogs } = await syncLLMs();
+        eloSynced = true;
+        allLogs.push("📡 Models:", ...eloLogs, "", "💰 Pricing:", ...llmLogs);
     } catch (e) {
         console.error("[syncData][llms]", e);
         await safeTrackError(e, { function: "syncData", phase: "llms" });
         allLogs.push(
+            "📡 Models:",
             `❌ LLM sync failed: ${e instanceof Error ? e.message : String(e)}`,
         );
-        failureCount += llmCount;
     }
 
     try {
-        const techEntries = await db
-            .select({ entryId: techRegistry.entryId })
-            .from(techRegistry);
-        techCount = techEntries.length;
-        const techLogs = await syncTech();
-        allLogs.push(...techLogs);
+        const { logs: techLogs, count: techCount } = await syncTech();
+        syncedTools = techCount;
+        allLogs.push("", "🛠 Tools:", ...techLogs);
     } catch (e) {
         console.error("[syncData][tech]", e);
         await safeTrackError(e, { function: "syncData", phase: "tech" });
         allLogs.push(
+            "",
+            "🛠 Tools:",
             `❌ Tech sync failed: ${
                 e instanceof Error ? e.message : String(e)
             }`,
         );
-        failureCount += techCount;
     }
 
-    const total = llmCount + techCount;
-    const synced = total - failureCount;
-    const summary = `🔄 Sync complete. ${synced}/${total} entries updated.`;
+    const displayedModels = eloSynced
+        ? LMARENA_CATEGORIES.length * TOP_MODELS_LIMIT
+        : 0;
+    const summary = `🔄 Sync complete. ${
+        displayedModels + syncedTools
+    } entries displayed (${displayedModels} models, ${syncedTools} tools).`;
     console.log(`[syncData] ${summary}`);
 
     if (ctx) {
