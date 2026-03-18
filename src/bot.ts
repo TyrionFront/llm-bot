@@ -2,7 +2,6 @@ import { Bot } from "grammy";
 import { logUserActivity } from "./utils";
 import {
     handleStart,
-    handleRatings,
     handlePricing,
     handleTools,
     handleSync,
@@ -13,6 +12,7 @@ import {
     ADMIN_ID,
     ADMIN_COMMANDS,
     LMARENA_CATEGORIES,
+    OVERALL_CATEGORY,
     USER_COMMANDS,
 } from "./constants";
 
@@ -25,7 +25,7 @@ bot.use(async (ctx, next) => {
 });
 
 bot.command("start", handleStart);
-bot.command("ratings", handleRatings);
+bot.command("ratings", makeRatingsByCategoryHandler(OVERALL_CATEGORY));
 bot.command("pricing", handlePricing);
 bot.command("tools", handleTools);
 bot.command("sync", handleSync);

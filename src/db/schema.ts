@@ -1,18 +1,24 @@
-import { bigint, index, integer, pgEnum, pgTable, real, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgEnum, pgTable, primaryKey, real, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"]);
 
 export const llmRegistry = pgTable("llm_registry", {
-    modelId:      text("model_id").primaryKey(),
-    vendor:       text("vendor").notNull(),
-    eloRating:    integer("elo_rating"),
-    pricingUrl:   text("pricing_url"),
-    syncId:       text("sync_id"),
-    lmarenaId:       text("lmarena_id"),
-    lmarenaCategory: text("lmarena_category"),
-    ratingSource:    text("rating_source"),
-    lastUpdated:  timestamp("last_updated").defaultNow(),
+    modelId:     text("model_id").primaryKey(),
+    vendor:      text("vendor").notNull(),
+    pricingUrl:  text("pricing_url"),
+    syncId:      text("sync_id"),
+    lastUpdated: timestamp("last_updated").defaultNow(),
 });
+
+export const llmRatings = pgTable("llm_ratings", {
+    modelId:      text("model_id").notNull().references(() => llmRegistry.modelId),
+    category:     text("category").notNull(),
+    eloRating:    integer("elo_rating"),
+    ratingSource: text("rating_source"),
+    lastUpdated:  timestamp("last_updated").defaultNow(),
+}, (t) => [
+    primaryKey({ columns: [t.modelId, t.category] }),
+]);
 
 export const techRegistry = pgTable("tech_registry", {
     entryId:     text("entry_id").primaryKey(),

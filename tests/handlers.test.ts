@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { eq, inArray } from "drizzle-orm";
-import { handleMessageText, handlePricing, handleRatings, handleStart, handleSync, handleTools } from "../src/handlers";
+import { handleMessageText, handlePricing, makeRatingsByCategoryHandler, handleStart, handleSync, handleTools } from "../src/handlers";
+import { OVERALL_CATEGORY } from "../src/constants";
 import { syncData } from "../src/utils";
 import { GEMINI_RPM } from "../src/constants";
-import { geminiCounters, llmRegistry, users, userStats } from "../src/db/schema";
+import { geminiCounters, llmRatings, llmRegistry, users, userStats } from "../src/db/schema";
 import { createTestDb, type TestDb } from "./helpers/db";
 import { createMockCtx } from "./helpers/ctx";
 import { createFetchMock } from "./helpers/fetch";
@@ -56,60 +57,70 @@ describe("handleStart", () => {
     });
 });
 
-describe("handleRatings", () => {
+describe("makeRatingsByCategoryHandler (overall)", () => {
+    const RATINGS_TEST_MODEL_IDS = ["claude-opus-4-5-20251101-thinking-32k", "command-a-03-2025"];
+
+    beforeAll(async () => {
+        await testDb.db
+            .insert(llmRegistry)
+            .values([
+                { modelId: "claude-opus-4-5-20251101-thinking-32k", vendor: "Anthropic" },
+                { modelId: "command-a-03-2025", vendor: "Cohere" },
+            ])
+            .onConflictDoNothing();
+        await testDb.db
+            .insert(llmRatings)
+            .values([
+                { modelId: "claude-opus-4-5-20251101-thinking-32k", category: "overall", eloRating: 1505, ratingSource: "lmarena.ai (avg)" },
+                { modelId: "command-a-03-2025", category: "overall", eloRating: 1435, ratingSource: "lmarena.ai (avg)" },
+            ])
+            .onConflictDoNothing();
+    });
+
+    afterAll(async () => {
+        await testDb.db.delete(llmRatings).where(inArray(llmRatings.modelId, RATINGS_TEST_MODEL_IDS));
+    });
+
     it("replies with the leaderboard ordered by ELO rating", async () => {
         const ctx = createMockCtx();
-        await handleRatings(ctx);
+        await makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
         expect(text).toContain("LLM Leaderboard");
-        expect(text).toContain("claude-4-6-thinking");
+        expect(text).toContain("claude-opus-4-5-20251101-thinking-32k");
         expect(text).toContain("Anthropic");
-        expect(text).toContain("ELO:");
+        expect(text).toContain("🏆 ELO:");
     });
 
     it("lists models in descending ELO order", async () => {
         const ctx = createMockCtx();
-        await handleRatings(ctx);
+        await makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        const claudePos = (text as string).indexOf("claude-4-6-thinking");
-        const cohere = (text as string).indexOf("command-r-plus-3");
-        expect(claudePos).toBeLessThan(cohere);
+        const claudePos = (text as string).indexOf("claude-opus-4-5-20251101-thinking-32k");
+        const coherePos = (text as string).indexOf("command-a-03-2025");
+        expect(claudePos).toBeLessThan(coherePos);
     });
 });
 
 describe("handlePricing", () => {
-    const PRICING_TEST_IDS = ["coding/test-anthropic", "coding/test-openai"];
+    const PRICING_TEST_IDS = ["test-anthropic", "test-openai"];
 
     beforeAll(async () => {
         await testDb.db.insert(llmRegistry).values([
-            {
-                modelId: "coding/test-anthropic",
-                vendor: "Anthropic",
-                lmarenaId: "test-anthropic",
-                lmarenaCategory: "coding",
-                eloRating: 1500,
-                ratingSource: "lmarena.ai",
-                pricingUrl: "https://openrouter.ai/anthropic/claude-test",
-            },
-            {
-                modelId: "coding/test-openai",
-                vendor: "OpenAI",
-                lmarenaId: "test-openai",
-                lmarenaCategory: "coding",
-                eloRating: 1480,
-                ratingSource: "lmarena.ai",
-                pricingUrl: "https://openrouter.ai/openai/gpt-test",
-            },
+            { modelId: "test-anthropic", vendor: "Anthropic", pricingUrl: "https://openrouter.ai/anthropic/claude-test" },
+            { modelId: "test-openai",    vendor: "OpenAI",    pricingUrl: "https://openrouter.ai/openai/gpt-test" },
+        ]);
+        await testDb.db.insert(llmRatings).values([
+            { modelId: "test-anthropic", category: "coding", eloRating: 1500, ratingSource: "lmarena.ai" },
+            { modelId: "test-openai",    category: "coding", eloRating: 1480, ratingSource: "lmarena.ai" },
         ]);
     });
 
     afterAll(async () => {
-        await testDb.db
-            .delete(llmRegistry)
-            .where(inArray(llmRegistry.modelId, PRICING_TEST_IDS));
+        await testDb.db.delete(llmRatings).where(inArray(llmRatings.modelId, PRICING_TEST_IDS));
+        await testDb.db.delete(llmRegistry).where(inArray(llmRegistry.modelId, PRICING_TEST_IDS));
     });
 
     it("replies with an inline keyboard containing vendor pricing links", async () => {

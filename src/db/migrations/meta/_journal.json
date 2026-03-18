@@ -57,6 +57,13 @@
       "when": 1772368196999,
       "tag": "0007_llm_lmarena_category",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1772368197000,
+      "tag": "0008_llm_ratings_table",
+      "breakpoints": true
     }
   ]
 }
