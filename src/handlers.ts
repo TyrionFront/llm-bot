@@ -2,7 +2,7 @@ import { InlineKeyboard } from "grammy";
 import type { CommandContext, Context, Filter } from "grammy";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db/index";
-import { llmRegistry, techRegistry } from "./db/schema";
+import { llmRatings, llmRegistry, techRegistry } from "./db/schema";
 import {
     ADMIN_ID,
     ADMIN_COMMAND_LINES,
@@ -54,48 +54,32 @@ export async function handleStart(ctx: CommandContext<Context>): Promise<void> {
     );
 }
 
-/**
- * Handles the /ratings command.
- * Fetches all LLM entries ordered by ELO rating and replies with a formatted leaderboard.
- */
-export async function handleRatings(
-    ctx: CommandContext<Context>,
-): Promise<void> {
-    try {
-        const rows = await db
-            .select()
-            .from(llmRegistry)
-            .orderBy(desc(llmRegistry.eloRating))
-            .limit(TOP_MODELS_LIMIT);
+type LeaderboardRow = { modelId: string; vendor: string; eloRating: number | null; ratingSource: string | null };
 
-        const text = rows
-            .map(
-                (m, i) =>
-                    `${i + 1}. *${m.modelId}* (${m.vendor})\n` +
-                    `    🏆 ELO: *${m.eloRating}* · 📡 ${
-                        m.ratingSource ?? "N/A"
-                    }`,
-            )
-            .join("\n\n");
+function formatLeaderboardRows(rows: LeaderboardRow[]): string {
+    return rows
+        .map(
+            (m, i) =>
+                `${i + 1}. *${m.modelId}* (${m.vendor})\n` +
+                `    🏆 ELO: *${m.eloRating}* · 📡 ${m.ratingSource ?? "N/A"}`,
+        )
+        .join("\n\n");
+}
 
-        const now = new Date();
-        const period = now.toLocaleString("en-US", {
-            month: "short",
-            year: "numeric",
-        });
-        const header =
-            `📊 *LLM Leaderboard — Overall (${period})*\n\n` +
-            "_ELO is a competitive rating system — models gain or lose points based on head-to-head human preference votes. " +
-            "Ratings are sourced from lmarena.ai (Chatbot Arena), a crowdsourced benchmark where users blind-test two models and pick the better response._\n\n";
-
-        await ctx.reply(`${header}${text}`, {
-            parse_mode: "Markdown",
-        });
-    } catch (e) {
-        console.error("[/ratings]", e);
-        await safeTrackError(e, { handler: "/ratings" });
-        await ctx.reply("❌ Failed to fetch leaderboard.");
-    }
+async function fetchLeaderboardRows(category: string): Promise<LeaderboardRow[]> {
+    const rows = await db
+        .select({
+            modelId:      llmRegistry.modelId,
+            vendor:       llmRegistry.vendor,
+            eloRating:    llmRatings.eloRating,
+            ratingSource: llmRatings.ratingSource,
+        })
+        .from(llmRegistry)
+        .innerJoin(llmRatings, eq(llmRatings.modelId, llmRegistry.modelId))
+        .where(eq(llmRatings.category, category))
+        .orderBy(desc(llmRatings.eloRating))
+        .limit(TOP_MODELS_LIMIT);
+    return rows;
 }
 
 /**
@@ -126,7 +110,7 @@ export async function handlePricing(
                     inArray(llmRegistry.vendor, [...topVendors]),
                 ),
             )
-            .orderBy(llmRegistry.vendor, desc(llmRegistry.eloRating));
+            .orderBy(llmRegistry.vendor, desc(llmRegistry.lastUpdated));
 
         if (rows.length === 0) {
             return void (await ctx.reply(
@@ -201,9 +185,10 @@ export async function handleTools(ctx: CommandContext<Context>): Promise<void> {
 }
 
 /**
- * Returns a handler for `/ratings_{category}` commands.
- * Fetches the top-10 entries for the given lmarena category and replies with a formatted leaderboard.
- * @param category - The lmarena category key (e.g. `"coding"`, `"english"`).
+ * Returns a handler for leaderboard commands.
+ * Covers both lmarena categories (e.g. `"coding"`, `"math"`) and the synthetic
+ * `"overall"` category (avg ELO across all tracked categories, computed on sync).
+ * @param category - The category key to display.
  */
 export function makeRatingsByCategoryHandler(
     category: string,
@@ -214,12 +199,7 @@ export function makeRatingsByCategoryHandler(
 
     return async (ctx) => {
         try {
-            const rows = await db
-                .select()
-                .from(llmRegistry)
-                .where(eq(llmRegistry.lmarenaCategory, category))
-                .orderBy(desc(llmRegistry.eloRating))
-                .limit(TOP_MODELS_LIMIT);
+            const rows = await fetchLeaderboardRows(category);
 
             if (rows.length === 0) {
                 return void (await ctx.reply(
@@ -227,20 +207,8 @@ export function makeRatingsByCategoryHandler(
                 ));
             }
 
-            const text = rows
-                .map(
-                    (m, i) =>
-                        `${i + 1}. *${m.lmarenaId ?? m.modelId}* (${
-                            m.vendor
-                        })\n` +
-                        `    🏆 ELO: *${m.eloRating}* · 📡 ${
-                            m.ratingSource ?? "N/A"
-                        }`,
-                )
-                .join("\n\n");
-
             await ctx.reply(
-                `📊 *LLM Leaderboard — ${label}*\n\n_${description}_\n\n${text}`,
+                `📊 *LLM Leaderboard — ${label}*\n\n_${description}_\n\n${formatLeaderboardRows(rows)}`,
                 { parse_mode: "Markdown" },
             );
         } catch (e) {

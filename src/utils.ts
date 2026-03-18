@@ -1,9 +1,10 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import type { Context } from "grammy";
 import { ErrorUtility } from "try-catch-cloud";
 import { db } from "./db/index";
 import {
     geminiCounters,
+    llmRatings,
     llmRegistry,
     techRegistry,
     userStats,
@@ -17,6 +18,7 @@ import {
     LMARENA_CATEGORIES,
     LMARENA_LEADERBOARD_URL,
     OPENROUTER_MODELS_URL,
+    OVERALL_CATEGORY,
     SWEBENCH_EXPERIMENTS_URL,
     SWEBENCH_VERIFIED_TOTAL,
     TELEGRAM_MAX_LENGTH,
@@ -189,20 +191,29 @@ export async function saveGeminiResponse(
 
 /**
  * Returns the set of vendors that appear in at least one top-N list across all lmarena categories.
- * Queries each category in parallel and unions the results.
+ * Uses a single CTE with a ROW_NUMBER window function to rank models per category,
+ * then selects distinct vendors whose rank is within TOP_MODELS_LIMIT.
+ * The synthetic "overall" category is excluded from this computation.
  */
 export async function getTopListVendors(): Promise<Set<string>> {
-    const results = await Promise.all(
-        LMARENA_CATEGORIES.map((cat) =>
-            db
-                .select({ vendor: llmRegistry.vendor })
-                .from(llmRegistry)
-                .where(eq(llmRegistry.lmarenaCategory, cat))
-                .orderBy(desc(llmRegistry.eloRating))
-                .limit(TOP_MODELS_LIMIT),
-        ),
+    const ranked = db.$with("ranked").as(
+        db
+            .select({
+                modelId: llmRatings.modelId,
+                rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${llmRatings.category} ORDER BY ${llmRatings.eloRating} DESC)`.as("rn"),
+            })
+            .from(llmRatings)
+            .where(ne(llmRatings.category, OVERALL_CATEGORY)),
     );
-    return new Set(results.flat().map((r) => r.vendor));
+
+    const rows = await db
+        .with(ranked)
+        .selectDistinct({ vendor: llmRegistry.vendor })
+        .from(llmRegistry)
+        .innerJoin(ranked, eq(ranked.modelId, llmRegistry.modelId))
+        .where(lte(ranked.rn, TOP_MODELS_LIMIT));
+
+    return new Set(rows.map((r) => r.vendor));
 }
 
 /**
@@ -263,10 +274,9 @@ function inferVendor(lmarenaId: string): string {
 
 /**
  * Syncs ELO ratings from the lmarena arena-catalog leaderboard.
- * For every category present in the response, upserts all models by rating.
- * Uses `{category}/{lmarenaId}` as the composite model key to support the same
- * model appearing in multiple categories as separate rows.
- * @returns Log lines and total count of models upserted.
+ * Upserts one row per model into llmRegistry (metadata) and one row per
+ * (model, category) pair into llmRatings (category-specific ELO).
+ * @returns Log lines and total count of rating rows upserted.
  */
 async function syncELO(): Promise<{ logs: string[]; count: number }> {
     const logs: string[] = [];
@@ -287,21 +297,26 @@ async function syncELO(): Promise<{ logs: string[]; count: number }> {
         );
 
         for (const [lmarenaId, modelData] of sortedModels) {
-            const modelId = `${category}/${lmarenaId}`;
             const vendor = inferVendor(lmarenaId);
 
             await db
                 .insert(llmRegistry)
+                .values({ modelId: lmarenaId, vendor })
+                .onConflictDoUpdate({
+                    target: llmRegistry.modelId,
+                    set: { vendor, lastUpdated: new Date() },
+                });
+
+            await db
+                .insert(llmRatings)
                 .values({
-                    modelId,
-                    vendor,
-                    lmarenaId,
-                    lmarenaCategory: category,
+                    modelId: lmarenaId,
+                    category,
                     eloRating: Math.round(modelData.rating),
                     ratingSource: "lmarena.ai",
                 })
                 .onConflictDoUpdate({
-                    target: llmRegistry.modelId,
+                    target: [llmRatings.modelId, llmRatings.category],
                     set: {
                         eloRating: Math.round(modelData.rating),
                         lastUpdated: new Date(),
@@ -312,6 +327,31 @@ async function syncELO(): Promise<{ logs: string[]; count: number }> {
 
         logs.push(`✅ ${category}: TOP-${TOP_MODELS_LIMIT} models synced`);
     }
+
+    await db
+        .insert(llmRatings)
+        .select(
+            db
+                .select({
+                    modelId:      llmRatings.modelId,
+                    category:     sql<string>`${OVERALL_CATEGORY}`.as("category"),
+                    eloRating:    sql<number>`ROUND(AVG(${llmRatings.eloRating}))::integer`.as("elo_rating"),
+                    ratingSource: sql<string>`${"lmarena.ai (avg)"}`.as("rating_source"),
+                    lastUpdated:  sql<Date>`NOW()`.as("last_updated"),
+                })
+                .from(llmRatings)
+                .where(ne(llmRatings.category, OVERALL_CATEGORY))
+                .groupBy(llmRatings.modelId),
+        )
+        .onConflictDoUpdate({
+            target: [llmRatings.modelId, llmRatings.category],
+            set: {
+                eloRating:   sql`EXCLUDED.elo_rating`,
+                lastUpdated: sql`NOW()`,
+            },
+        });
+
+    logs.push("✅ overall: avg ELO recomputed for all synced models");
 
     return { logs, count };
 }

@@ -7,6 +7,8 @@ export const SWEBENCH_EXPERIMENTS_URL =
     "https://raw.githubusercontent.com/swe-bench/experiments/main/evaluation/verified";
 export const SWEBENCH_VERIFIED_TOTAL = 500;
 
+export const OVERALL_CATEGORY = "overall" as const;
+
 export const LMARENA_CATEGORIES = [
     "coding",
     "creative_writing",
@@ -17,6 +19,7 @@ export const LMARENA_CATEGORIES = [
 ] as const;
 
 export const LMARENA_CATEGORY_LABEL: Record<string, string> = {
+    overall: "Overall",
     coding: "Coding",
     creative_writing: "Creative Writing",
     math: "Math",
@@ -26,6 +29,9 @@ export const LMARENA_CATEGORY_LABEL: Record<string, string> = {
 };
 
 export const LMARENA_CATEGORY_DESCRIPTION: Record<string, string> = {
+    overall:
+        "Average ELO across all tracked categories (Coding, Creative Writing, Math, Expert, Instruction Following, Multiturn). " +
+        "Computed locally on each sync — not a direct lmarena.ai ranking.",
     coding: "Models ranked by their ability to write, debug, and reason about code based on human preference votes.",
     creative_writing:
         "Models ranked on open-ended writing tasks — stories, poetry, and imaginative prose — judged by human preference.",
@@ -45,7 +51,7 @@ export const USER_COMMANDS = [
     { command: "start", description: "Show bot info & available commands" },
     {
         command: "ratings",
-        description: "Overall ELO leaderboard (all categories combined)",
+        description: "Overall ELO leaderboard (avg across all categories)",
     },
     {
         command: "pricing",
