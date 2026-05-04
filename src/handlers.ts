@@ -66,7 +66,7 @@ function formatLeaderboardRows(rows: LeaderboardRow[]): string {
         .join("\n\n");
 }
 
-async function fetchLeaderboardRows(category: string): Promise<LeaderboardRow[]> {
+async function fetchLeaderboardRows(category: string): Promise<{ rows: LeaderboardRow[]; dataAsOf: Date | null }> {
     const rows = await db
         .select({
             modelId:      llmRegistry.modelId,
@@ -79,7 +79,27 @@ async function fetchLeaderboardRows(category: string): Promise<LeaderboardRow[]>
         .where(eq(llmRatings.category, category))
         .orderBy(desc(llmRatings.eloRating))
         .limit(TOP_MODELS_LIMIT);
-    return rows;
+
+    const [meta] = await db
+        .select({ dataAsOf: sql<Date>`MAX(${llmRatings.lastUpdated})` })
+        .from(llmRatings)
+        .where(eq(llmRatings.category, category));
+
+    return { rows, dataAsOf: meta?.dataAsOf ? new Date(meta.dataAsOf) : null };
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function formatDataRemark(dataAsOf: Date | null): string {
+    if (!dataAsOf) return "_Source: lmarena.ai_";
+    const dateStr = dataAsOf.toLocaleDateString("en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+    });
+    const ageMs = Date.now() - dataAsOf.getTime();
+    if (ageMs < SEVEN_DAYS_MS) {
+        return `🆕 _Updated ${dateStr} · Source: lmarena.ai_`;
+    }
+    return `⚠️ _Data as of ${dateStr} · lmarena.ai hasn't published a newer dataset_`;
 }
 
 /**
@@ -199,7 +219,7 @@ export function makeRatingsByCategoryHandler(
 
     return async (ctx) => {
         try {
-            const rows = await fetchLeaderboardRows(category);
+            const { rows, dataAsOf } = await fetchLeaderboardRows(category);
 
             if (rows.length === 0) {
                 return void (await ctx.reply(
@@ -207,8 +227,9 @@ export function makeRatingsByCategoryHandler(
                 ));
             }
 
+            const remark = formatDataRemark(dataAsOf);
             await ctx.reply(
-                `📊 *LLM Leaderboard — ${label}*\n\n_${description}_\n\n${formatLeaderboardRows(rows)}`,
+                `📊 *LLM Leaderboard — ${label}*\n\n_${description}_\n\n${formatLeaderboardRows(rows)}\n\n${remark}`,
                 { parse_mode: "Markdown" },
             );
         } catch (e) {

@@ -278,13 +278,28 @@ function inferVendor(lmarenaId: string): string {
  * (model, category) pair into llmRatings (category-specific ELO).
  * @returns Log lines and total count of rating rows upserted.
  */
-async function syncELO(): Promise<{ logs: string[]; count: number }> {
+async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: boolean }> {
     const logs: string[] = [];
     let count = 0;
+    let hasChanges = false;
 
     const res = await fetch(LMARENA_LEADERBOARD_URL);
     if (!res.ok) throw new Error(`lmarena API error: ${res.status}`);
     const data = (await res.json()) as LmarenaLeaderboard;
+
+    const existing = await db
+        .select({
+            modelId:   llmRatings.modelId,
+            category:  llmRatings.category,
+            eloRating: llmRatings.eloRating,
+        })
+        .from(llmRatings)
+        .where(ne(llmRatings.category, OVERALL_CATEGORY));
+
+    const existingMap = new Map(
+        existing.map((r) => [`${r.modelId}:${r.category}`, r.eloRating]),
+    );
+    const hasExistingData = existingMap.size > 0;
 
     for (const category of LMARENA_CATEGORIES) {
         const models = data[category];
@@ -298,6 +313,11 @@ async function syncELO(): Promise<{ logs: string[]; count: number }> {
 
         for (const [lmarenaId, modelData] of sortedModels) {
             const vendor = inferVendor(lmarenaId);
+            const newElo = Math.round(modelData.rating);
+
+            if (hasExistingData && existingMap.get(`${lmarenaId}:${category}`) !== newElo) {
+                hasChanges = true;
+            }
 
             await db
                 .insert(llmRegistry)
@@ -312,14 +332,14 @@ async function syncELO(): Promise<{ logs: string[]; count: number }> {
                 .values({
                     modelId: lmarenaId,
                     category,
-                    eloRating: Math.round(modelData.rating),
+                    eloRating: newElo,
                     ratingSource: "lmarena.ai",
                 })
                 .onConflictDoUpdate({
                     target: [llmRatings.modelId, llmRatings.category],
                     set: {
-                        eloRating: Math.round(modelData.rating),
-                        lastUpdated: new Date(),
+                        eloRating: newElo,
+                        lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
                     },
                 });
             count++;
@@ -353,7 +373,7 @@ async function syncELO(): Promise<{ logs: string[]; count: number }> {
 
     logs.push("✅ overall: avg ELO recomputed for all synced models");
 
-    return { logs, count };
+    return { logs, count, hasChanges };
 }
 
 /**
@@ -441,10 +461,12 @@ export async function syncData(ctx?: Context): Promise<void> {
     let eloSynced = false;
     let syncedTools = 0;
 
+    let hasNewData = false;
     try {
-        const { logs: eloLogs } = await syncELO();
+        const { logs: eloLogs, hasChanges } = await syncELO();
         const { logs: llmLogs } = await syncLLMs();
         eloSynced = true;
+        hasNewData = hasChanges;
         allLogs.push("📡 Models:", ...eloLogs, "", "💰 Pricing:", ...llmLogs);
     } catch (e) {
         console.error("[syncData][llms]", e);
@@ -474,9 +496,10 @@ export async function syncData(ctx?: Context): Promise<void> {
     const displayedModels = eloSynced
         ? LMARENA_CATEGORIES.length * TOP_MODELS_LIMIT
         : 0;
-    const summary = `🔄 Sync complete. ${
-        displayedModels + syncedTools
-    } entries displayed (${displayedModels} models, ${syncedTools} tools).`;
+    const total = displayedModels + syncedTools;
+    const summary = hasNewData
+        ? `🆕 Sync complete — new leaderboard data applied. ${total} entries updated (${displayedModels} models, ${syncedTools} tools).`
+        : `🔄 Sync complete — upstream source unchanged. ${total} entries displayed (${displayedModels} models, ${syncedTools} tools).`;
     console.log(`[syncData] ${summary}`);
 
     if (ctx) {
