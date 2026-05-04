@@ -2,7 +2,7 @@ export const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/
 export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 export const GITHUB_REPOS_URL = "https://api.github.com/repos";
 export const LMARENA_LEADERBOARD_URL =
-    "https://raw.githubusercontent.com/lmarena/arena-catalog/main/data/leaderboard-text.json";
+    "https://raw.githubusercontent.com/lmarena/arena-catalog/main/data/leaderboard-text-style-control.json";
 export const SWEBENCH_EXPERIMENTS_URL =
     "https://raw.githubusercontent.com/swe-bench/experiments/main/evaluation/verified";
 export const SWEBENCH_VERIFIED_TOTAL = 500;
