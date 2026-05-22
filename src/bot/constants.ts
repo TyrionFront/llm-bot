@@ -92,7 +92,11 @@ export const TELEGRAM_MAX_LENGTH = 4096;
 export const TOP_MODELS_LIMIT = 10;
 export const GEMINI_RPM = 5;
 export const GEMINI_RPD = 20;
+export const GEMINI_RPM_WINDOW_MS = 60_000;
 export const ADMIN_ID = Number(process.env.ADMIN_ID);
+
+export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1_000;
+export const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 export const GEMINI_SYSTEM_PROMPT =
     "You are an AI assistant embedded in an LLM leaderboard Telegram bot. " +
@@ -104,3 +108,15 @@ export const GEMINI_SYSTEM_PROMPT =
     "mistral-large-3 (Mistral AI), command-r-plus-3 (Cohere). " +
     "If the user asks about anything unrelated to LLMs or AI models, politely decline " +
     "and remind them that this bot is restricted to LLM-related topics only.";
+
+export const DATA_SOURCES =
+    "<b>How data is sourced:</b>\n" +
+    '• 🏆 <b>ELO ratings</b> — sourced from <a href="https://lmarena.ai">lmarena.ai</a> (Chatbot Arena), a crowdsourced human preference benchmark\n' +
+    '• 🔄 <b>LLM sync</b> — model availability cross-referenced with <a href="https://openrouter.ai">OpenRouter</a>\n' +
+    "• ⭐ <b>Tools &amp; agents</b> — GitHub star counts via GitHub API (only tools with a public API are tracked)\n" +
+    "• 💬 <b>AI replies</b> — powered by Gemini 2.5 Flash (Google)";
+
+export const SCORE_LABEL: Record<string, (score: number) => string> = {
+    "swe-bench": (s) => `🧪 SWE-bench: *${(s * 100).toFixed(1)}%*`,
+    github: (s) => `⭐ Stars: *${s}k*`,
+};

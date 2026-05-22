@@ -1,6 +1,7 @@
 import { bigint, index, integer, pgEnum, pgTable, primaryKey, real, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"]);
+export const userStatTypeEnum = pgEnum("user_stat_type", ["COMMAND", "AI_CHAT"]);
 
 export const llmRegistry = pgTable("llm_registry", {
     modelId:     text("model_id").primaryKey(),
@@ -53,6 +54,7 @@ export const userStats = pgTable("user_stats", {
     usersId:   bigint("users_id", { mode: "number" }).references(() => users.userId),
     input:     text("input"),
     response:  text("response"),
+    type:      userStatTypeEnum("type").notNull(),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [

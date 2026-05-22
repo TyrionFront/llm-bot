@@ -1,7 +1,7 @@
-import { desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import type { Context } from "grammy";
 import { ErrorUtility } from "try-catch-cloud";
-import { db } from "./db/index";
+import { db } from "../db/index";
 import {
     geminiCounters,
     llmRatings,
@@ -9,11 +9,13 @@ import {
     techRegistry,
     userStats,
     users,
-} from "./db/schema";
+} from "../db/schema";
 import {
+    ADMIN_COMMANDS,
     ADMIN_ID,
-    GEMINI_RPM,
     GEMINI_RPD,
+    GEMINI_RPM,
+    GEMINI_RPM_WINDOW_MS,
     GITHUB_REPOS_URL,
     LMARENA_CATEGORIES,
     LMARENA_LEADERBOARD_URL,
@@ -76,10 +78,11 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
             await tx.insert(geminiCounters).values({
                 id: 1,
                 rpmCount: 1,
-                rpmResetAt: new Date(now.getTime() + 60_000),
+                rpmResetAt: new Date(now.getTime() + GEMINI_RPM_WINDOW_MS),
                 rpdCount: 1,
                 rpdResetAt: nextUtcMidnight(),
             });
+
             return { allowed: true };
         }
 
@@ -87,7 +90,7 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
 
         if (now >= rpmResetAt) {
             rpmCount = 0;
-            rpmResetAt = new Date(now.getTime() + 60_000);
+            rpmResetAt = new Date(now.getTime() + GEMINI_RPM_WINDOW_MS);
         }
         if (now >= rpdResetAt) {
             rpdCount = 0;
@@ -130,11 +133,20 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
  * Silently ignores messages with no `from` field (e.g. channel posts).
  * @param ctx - The Grammy context for the current update.
  */
+const BOT_COMMAND_NAMES = new Set(ADMIN_COMMANDS.map((c) => c.command));
+
+function resolveStatType(input: string): "COMMAND" | "AI_CHAT" {
+    if (!input.startsWith("/")) return "AI_CHAT";
+    const commandPart = input.slice(1).split(/[\s@]/)[0] ?? "";
+    return BOT_COMMAND_NAMES.has(commandPart) ? "COMMAND" : "AI_CHAT";
+}
+
 export async function logUserActivity(ctx: Context): Promise<void> {
     const userId = ctx.from?.id;
     if (!userId) return;
 
     const username = ctx.from?.username ?? null;
+    const input = ctx.message?.text ?? null;
 
     try {
         await db
@@ -149,9 +161,14 @@ export async function logUserActivity(ctx: Context): Promise<void> {
                 set: { username, updatedAt: new Date() },
             });
 
+        if (!input) {
+            return;
+        }
+
         await db.insert(userStats).values({
             usersId: userId,
-            input: ctx.message?.text ?? null,
+            input,
+            type: resolveStatType(input),
         });
     } catch (e) {
         console.error("[logUserActivity]", e);
@@ -173,7 +190,12 @@ export async function saveGeminiResponse(
         const [latestStat] = await db
             .select({ id: userStats.id })
             .from(userStats)
-            .where(eq(userStats.usersId, userId))
+            .where(
+                and(
+                    eq(userStats.usersId, userId),
+                    eq(userStats.type, "AI_CHAT"),
+                ),
+            )
             .orderBy(desc(userStats.createdAt))
             .limit(1);
 
@@ -200,7 +222,9 @@ export async function getTopListVendors(): Promise<Set<string>> {
         db
             .select({
                 modelId: llmRatings.modelId,
-                rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${llmRatings.category} ORDER BY ${llmRatings.eloRating} DESC)`.as("rn"),
+                rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${llmRatings.category} ORDER BY ${llmRatings.eloRating} DESC)`.as(
+                    "rn",
+                ),
             })
             .from(llmRatings)
             .where(ne(llmRatings.category, OVERALL_CATEGORY)),
@@ -250,6 +274,7 @@ async function syncLLMs(): Promise<{ logs: string[]; count: number }> {
                 lastUpdated: new Date(),
             })
             .where(eq(llmRegistry.modelId, entry.modelId));
+
         count++;
     }
 
@@ -278,7 +303,11 @@ function inferVendor(lmarenaId: string): string {
  * (model, category) pair into llmRatings (category-specific ELO).
  * @returns Log lines and total count of rating rows upserted.
  */
-async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: boolean }> {
+async function syncELO(): Promise<{
+    logs: string[];
+    count: number;
+    hasChanges: boolean;
+}> {
     const logs: string[] = [];
     let count = 0;
     let hasChanges = false;
@@ -289,8 +318,8 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
 
     const existing = await db
         .select({
-            modelId:   llmRatings.modelId,
-            category:  llmRatings.category,
+            modelId: llmRatings.modelId,
+            category: llmRatings.category,
             eloRating: llmRatings.eloRating,
         })
         .from(llmRatings)
@@ -315,7 +344,10 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
             const vendor = inferVendor(lmarenaId);
             const newElo = Math.round(modelData.rating);
 
-            if (hasExistingData && existingMap.get(`${lmarenaId}:${category}`) !== newElo) {
+            if (
+                hasExistingData &&
+                existingMap.get(`${lmarenaId}:${category}`) !== newElo
+            ) {
                 hasChanges = true;
             }
 
@@ -342,6 +374,7 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
                         lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
                     },
                 });
+
             count++;
         }
 
@@ -353,11 +386,16 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
         .select(
             db
                 .select({
-                    modelId:      llmRatings.modelId,
-                    category:     sql<string>`${OVERALL_CATEGORY}`.as("category"),
-                    eloRating:    sql<number>`ROUND(AVG(${llmRatings.eloRating}))::integer`.as("elo_rating"),
-                    ratingSource: sql<string>`${"lmarena.ai (avg)"}`.as("rating_source"),
-                    lastUpdated:  sql<Date>`NOW()`.as("last_updated"),
+                    modelId: llmRatings.modelId,
+                    category: sql<string>`${OVERALL_CATEGORY}`.as("category"),
+                    eloRating:
+                        sql<number>`ROUND(AVG(${llmRatings.eloRating}))::integer`.as(
+                            "elo_rating",
+                        ),
+                    ratingSource: sql<string>`${"lmarena.ai (avg)"}`.as(
+                        "rating_source",
+                    ),
+                    lastUpdated: sql<Date>`NOW()`.as("last_updated"),
                 })
                 .from(llmRatings)
                 .where(ne(llmRatings.category, OVERALL_CATEGORY))
@@ -366,7 +404,7 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
         .onConflictDoUpdate({
             target: [llmRatings.modelId, llmRatings.category],
             set: {
-                eloRating:   sql`EXCLUDED.elo_rating`,
+                eloRating: sql`EXCLUDED.elo_rating`,
                 lastUpdated: sql`NOW()`,
             },
         });
@@ -417,6 +455,7 @@ async function syncTech(): Promise<{ logs: string[]; count: number }> {
             .update(techRegistry)
             .set({ score: kStars, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
+
         logs.push(`✅ ${entry.name}: ${kStars}k stars synced`);
         count++;
     }
@@ -441,6 +480,7 @@ async function syncTech(): Promise<{ logs: string[]; count: number }> {
             .update(techRegistry)
             .set({ score, lastUpdated: new Date() })
             .where(eq(techRegistry.entryId, entry.entryId));
+
         logs.push(
             `✅ ${entry.name}: ${(score * 100).toFixed(1)}% SWE-bench synced`,
         );
