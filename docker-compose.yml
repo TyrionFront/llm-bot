@@ -10,6 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - pg_data_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d insights_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   bot:
     build: .
@@ -17,7 +22,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       PGHOST: db
       PGPORT: 5432

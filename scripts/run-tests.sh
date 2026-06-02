@@ -11,6 +11,7 @@ export ADMIN_ID="100"
 export GEMINI_KEY="test-gemini-key"
 export TELEGRAM_TOKEN="test-token"
 export TRY_CATCH_CLOUD_API_KEY="test-key"
+export JWT_SECRET="test-jwt-secret"
 
 cleanup() {
     echo "Shutting down test container..."

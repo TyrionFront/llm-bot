@@ -1,10 +1,23 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import {
+    afterAll,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    it,
+} from "bun:test";
 import { eq, inArray } from "drizzle-orm";
-import { handleMessageText, handlePricing, makeRatingsByCategoryHandler, handleStart, handleSync, handleTools } from "../src/handlers";
-import { OVERALL_CATEGORY } from "../src/constants";
-import { syncData } from "../src/utils";
-import { GEMINI_RPM } from "../src/constants";
-import { geminiCounters, llmRatings, llmRegistry, users, userStats } from "../src/db/schema";
+import { BotHandlers } from "../src/bot/handlers";
+import { OVERALL_CATEGORY } from "../src/bot/constants";
+import { syncData } from "../src/bot/utils";
+import { GEMINI_RPM } from "../src/bot/constants";
+import {
+    geminiCounters,
+    llmRatings,
+    llmRegistry,
+    users,
+    userStats,
+} from "../src/db/schema";
 import { createTestDb, type TestDb } from "./helpers/db";
 import { createMockCtx } from "./helpers/ctx";
 import { createFetchMock } from "./helpers/fetch";
@@ -37,7 +50,7 @@ beforeEach(async () => {
 describe("handleStart", () => {
     it("replies with bot info for a regular user", async () => {
         const ctx = createMockCtx({ userId: 999 });
-        await handleStart(ctx);
+        await BotHandlers.handleStart(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
@@ -50,7 +63,7 @@ describe("handleStart", () => {
 
     it("includes /sync in the command list for the admin user", async () => {
         const ctx = createMockCtx({ userId: ADMIN_USER_ID });
-        await handleStart(ctx);
+        await BotHandlers.handleStart(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
         expect(text).toContain("/sync");
@@ -58,32 +71,51 @@ describe("handleStart", () => {
 });
 
 describe("makeRatingsByCategoryHandler (overall)", () => {
-    const RATINGS_TEST_MODEL_IDS = ["claude-opus-4-5-20251101-thinking-32k", "command-a-03-2025"];
+    const RATINGS_TEST_MODEL_IDS = [
+        "claude-opus-4-5-20251101-thinking-32k",
+        "command-a-03-2025",
+    ];
 
     beforeAll(async () => {
         await testDb.db
             .insert(llmRegistry)
             .values([
-                { modelId: "claude-opus-4-5-20251101-thinking-32k", vendor: "Anthropic" },
+                {
+                    modelId: "claude-opus-4-5-20251101-thinking-32k",
+                    vendor: "Anthropic",
+                },
                 { modelId: "command-a-03-2025", vendor: "Cohere" },
             ])
             .onConflictDoNothing();
+
         await testDb.db
             .insert(llmRatings)
             .values([
-                { modelId: "claude-opus-4-5-20251101-thinking-32k", category: "overall", eloRating: 1505, ratingSource: "lmarena.ai (avg)" },
-                { modelId: "command-a-03-2025", category: "overall", eloRating: 1435, ratingSource: "lmarena.ai (avg)" },
+                {
+                    modelId: "claude-opus-4-5-20251101-thinking-32k",
+                    category: "overall",
+                    eloRating: 1505,
+                    ratingSource: "lmarena.ai (avg)",
+                },
+                {
+                    modelId: "command-a-03-2025",
+                    category: "overall",
+                    eloRating: 1435,
+                    ratingSource: "lmarena.ai (avg)",
+                },
             ])
             .onConflictDoNothing();
     });
 
     afterAll(async () => {
-        await testDb.db.delete(llmRatings).where(inArray(llmRatings.modelId, RATINGS_TEST_MODEL_IDS));
+        await testDb.db
+            .delete(llmRatings)
+            .where(inArray(llmRatings.modelId, RATINGS_TEST_MODEL_IDS));
     });
 
     it("replies with the leaderboard ordered by ELO rating", async () => {
         const ctx = createMockCtx();
-        await makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
+        await BotHandlers.makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
@@ -95,10 +127,12 @@ describe("makeRatingsByCategoryHandler (overall)", () => {
 
     it("lists models in descending ELO order", async () => {
         const ctx = createMockCtx();
-        await makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
+        await BotHandlers.makeRatingsByCategoryHandler(OVERALL_CATEGORY)(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        const claudePos = (text as string).indexOf("claude-opus-4-5-20251101-thinking-32k");
+        const claudePos = (text as string).indexOf(
+            "claude-opus-4-5-20251101-thinking-32k",
+        );
         const coherePos = (text as string).indexOf("command-a-03-2025");
         expect(claudePos).toBeLessThan(coherePos);
     });
@@ -109,32 +143,59 @@ describe("handlePricing", () => {
 
     beforeAll(async () => {
         await testDb.db.insert(llmRegistry).values([
-            { modelId: "test-anthropic", vendor: "Anthropic", pricingUrl: "https://openrouter.ai/anthropic/claude-test" },
-            { modelId: "test-openai",    vendor: "OpenAI",    pricingUrl: "https://openrouter.ai/openai/gpt-test" },
+            {
+                modelId: "test-anthropic",
+                vendor: "Anthropic",
+                pricingUrl: "https://openrouter.ai/anthropic/claude-test",
+            },
+            {
+                modelId: "test-openai",
+                vendor: "OpenAI",
+                pricingUrl: "https://openrouter.ai/openai/gpt-test",
+            },
         ]);
+
         await testDb.db.insert(llmRatings).values([
-            { modelId: "test-anthropic", category: "coding", eloRating: 1500, ratingSource: "lmarena.ai" },
-            { modelId: "test-openai",    category: "coding", eloRating: 1480, ratingSource: "lmarena.ai" },
+            {
+                modelId: "test-anthropic",
+                category: "coding",
+                eloRating: 1500,
+                ratingSource: "lmarena.ai",
+            },
+            {
+                modelId: "test-openai",
+                category: "coding",
+                eloRating: 1480,
+                ratingSource: "lmarena.ai",
+            },
         ]);
     });
 
     afterAll(async () => {
-        await testDb.db.delete(llmRatings).where(inArray(llmRatings.modelId, PRICING_TEST_IDS));
-        await testDb.db.delete(llmRegistry).where(inArray(llmRegistry.modelId, PRICING_TEST_IDS));
+        await testDb.db
+            .delete(llmRatings)
+            .where(inArray(llmRatings.modelId, PRICING_TEST_IDS));
+
+        await testDb.db
+            .delete(llmRegistry)
+            .where(inArray(llmRegistry.modelId, PRICING_TEST_IDS));
     });
 
     it("replies with an inline keyboard containing vendor pricing links", async () => {
         const ctx = createMockCtx();
-        await handlePricing(ctx);
+        await BotHandlers.handlePricing(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
-        const [, opts] = ctx.reply.mock.calls[0] as [string, { reply_markup: unknown }];
+        const [, opts] = ctx.reply.mock.calls[0] as [
+            string,
+            { reply_markup: unknown },
+        ];
         expect(opts?.reply_markup).toBeDefined();
     });
 
     it("includes the official pricing label text in the reply", async () => {
         const ctx = createMockCtx();
-        await handlePricing(ctx);
+        await BotHandlers.handlePricing(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
         expect(text).toContain("Official Pricing Portals");
@@ -144,21 +205,21 @@ describe("handlePricing", () => {
 describe("handleTools", () => {
     it("replies with the tools leaderboard", async () => {
         const ctx = createMockCtx();
-        await handleTools(ctx);
+        await BotHandlers.handleTools(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        expect(text).toContain("Coding Tools & Agents Leaderboard");
+        expect(text).toContain("Coding Tools &amp; Agents Leaderboard");
         expect(text).toContain("LangGraph");
         expect(text).toContain("OpenCode");
     });
 
     it("shows N/A score for entries without synced data", async () => {
         const ctx = createMockCtx();
-        await handleTools(ctx);
+        await BotHandlers.handleTools(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        expect(text).toContain("Score: *N/A*");
+        expect(text).toContain("Score: <b>N/A</b>");
     });
 
     it("shows GitHub star score after a sync", async () => {
@@ -167,7 +228,7 @@ describe("handleTools", () => {
 
         global.fetch = savedFetch;
         const ctx = createMockCtx();
-        await handleTools(ctx);
+        await BotHandlers.handleTools(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
         expect(text).toContain("Stars:");
@@ -177,7 +238,7 @@ describe("handleTools", () => {
 describe("handleSync", () => {
     it("silently ignores calls from non-admin users", async () => {
         const ctx = createMockCtx({ userId: 999 });
-        await handleSync(ctx);
+        await BotHandlers.handleSync(ctx);
 
         expect(ctx.reply).not.toHaveBeenCalled();
     });
@@ -185,7 +246,7 @@ describe("handleSync", () => {
     it("triggers a full sync and replies with a summary for the admin", async () => {
         global.fetch = createFetchMock();
         const ctx = createMockCtx({ userId: ADMIN_USER_ID });
-        await handleSync(ctx);
+        await BotHandlers.handleSync(ctx);
 
         expect(ctx.reply).toHaveBeenCalledTimes(2);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
@@ -197,7 +258,7 @@ describe("handleMessageText", () => {
     it("replies with the AI-generated response from Gemini", async () => {
         global.fetch = createFetchMock();
         const ctx = createMockCtx({ userId: 42, text: "What is GPT-4?" });
-        await handleMessageText(ctx);
+        await BotHandlers.handleMessageText(ctx);
 
         expect(ctx.replyWithChatAction).toHaveBeenCalledWith("typing");
         expect(ctx.reply).toHaveBeenCalledTimes(1);
@@ -208,21 +269,29 @@ describe("handleMessageText", () => {
     it("saves the Gemini response to the most recent user stat", async () => {
         global.fetch = createFetchMock();
 
-        await testDb.db.insert(users).values({ userId: 42, username: "tester", role: "USER" });
-        await testDb.db.insert(userStats).values({ usersId: 42, input: "What is GPT-4?" });
+        await testDb.db
+            .insert(users)
+            .values({ userId: 42, username: "tester", role: "USER" });
+
+        await testDb.db
+            .insert(userStats)
+            .values({ usersId: 42, input: "What is GPT-4?", type: "AI_CHAT" });
 
         const ctx = createMockCtx({ userId: 42, text: "What is GPT-4?" });
-        await handleMessageText(ctx);
+        await BotHandlers.handleMessageText(ctx);
 
         const stats = await testDb.db
             .select()
             .from(userStats)
             .where(eq(userStats.usersId, 42));
 
-        const latest = stats.sort((a, b) =>
-            (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
+        const latest = stats.sort(
+            (a, b) =>
+                (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
         )[0];
+
         expect(latest?.response).toBe("Test AI response about LLMs.");
+        expect(latest?.type).toBe("AI_CHAT");
     });
 
     it("replies with rate-limit message when RPM limit is reached", async () => {
@@ -235,7 +304,7 @@ describe("handleMessageText", () => {
         });
 
         const ctx = createMockCtx({ text: "hello" });
-        await handleMessageText(ctx);
+        await BotHandlers.handleMessageText(ctx);
 
         expect(ctx.replyWithChatAction).not.toHaveBeenCalled();
         const [text] = ctx.reply.mock.calls[0] as [string];
@@ -259,7 +328,7 @@ describe("handleMessageText", () => {
         });
 
         const ctx = createMockCtx({ text: "hi" });
-        await handleMessageText(ctx);
+        await BotHandlers.handleMessageText(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string];
         expect(text).toContain("Rate limit hit");
@@ -278,7 +347,7 @@ describe("handleMessageText", () => {
         });
 
         const ctx = createMockCtx({ text: "hi" });
-        await handleMessageText(ctx);
+        await BotHandlers.handleMessageText(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string];
         expect(text).toContain("AI response failed");

@@ -29,3 +29,10 @@ export type LmarenaLeaderboard = Record<string, LmarenaCategory>
 export type SweBenchResults = {
     resolved: string[]
 }
+
+export type LeaderboardRow = {
+    modelId: string;
+    vendor: string;
+    eloRating: number | null;
+    ratingSource: string | null;
+}

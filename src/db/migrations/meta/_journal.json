@@ -1,69 +1,83 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1772306783246,
-      "tag": "0000_quick_black_panther",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1772306783247,
-      "tag": "0001_consolidated",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1772367707029,
-      "tag": "0002_easy_sunset_bain",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1772368196995,
-      "tag": "0003_flawless_pet_avengers",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1772368196996,
-      "tag": "0004_user_stats_users_id_to_telegram_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1772368196997,
-      "tag": "0005_llm_registry_lmarena_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1772368196998,
-      "tag": "0006_populate_lmarena_ids",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1772368196999,
-      "tag": "0007_llm_lmarena_category",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1772368197000,
-      "tag": "0008_llm_ratings_table",
-      "breakpoints": true
-    }
-  ]
+    "version": "7",
+    "dialect": "postgresql",
+    "entries": [
+        {
+            "idx": 0,
+            "version": "7",
+            "when": 1772306783246,
+            "tag": "0000_quick_black_panther",
+            "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1772306783247,
+            "tag": "0001_consolidated",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1772367707029,
+            "tag": "0002_easy_sunset_bain",
+            "breakpoints": true
+        },
+        {
+            "idx": 3,
+            "version": "7",
+            "when": 1772368196995,
+            "tag": "0003_flawless_pet_avengers",
+            "breakpoints": true
+        },
+        {
+            "idx": 4,
+            "version": "7",
+            "when": 1772368196996,
+            "tag": "0004_user_stats_users_id_to_telegram_id",
+            "breakpoints": true
+        },
+        {
+            "idx": 5,
+            "version": "7",
+            "when": 1772368196997,
+            "tag": "0005_llm_registry_lmarena_id",
+            "breakpoints": true
+        },
+        {
+            "idx": 6,
+            "version": "7",
+            "when": 1772368196998,
+            "tag": "0006_populate_lmarena_ids",
+            "breakpoints": true
+        },
+        {
+            "idx": 7,
+            "version": "7",
+            "when": 1772368196999,
+            "tag": "0007_llm_lmarena_category",
+            "breakpoints": true
+        },
+        {
+            "idx": 8,
+            "version": "7",
+            "when": 1772368197000,
+            "tag": "0008_llm_ratings_table",
+            "breakpoints": true
+        },
+        {
+            "idx": 9,
+            "version": "7",
+            "when": 1772368197001,
+            "tag": "0009_user_stats_type_enum",
+            "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1772368197002,
+            "tag": "0010_ensure_user_stat_type",
+            "breakpoints": true
+        }
+    ]
 }

@@ -1,7 +1,7 @@
-import { desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import type { Context } from "grammy";
 import { ErrorUtility } from "try-catch-cloud";
-import { db } from "./db/index";
+import { db } from "../db/index";
 import {
     geminiCounters,
     llmRatings,
@@ -9,11 +9,13 @@ import {
     techRegistry,
     userStats,
     users,
-} from "./db/schema";
+} from "../db/schema";
 import {
+    ADMIN_COMMANDS,
     ADMIN_ID,
-    GEMINI_RPM,
     GEMINI_RPD,
+    GEMINI_RPM,
+    GEMINI_RPM_WINDOW_MS,
     GITHUB_REPOS_URL,
     LMARENA_CATEGORIES,
     LMARENA_LEADERBOARD_URL,
@@ -76,10 +78,11 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
             await tx.insert(geminiCounters).values({
                 id: 1,
                 rpmCount: 1,
-                rpmResetAt: new Date(now.getTime() + 60_000),
+                rpmResetAt: new Date(now.getTime() + GEMINI_RPM_WINDOW_MS),
                 rpdCount: 1,
                 rpdResetAt: nextUtcMidnight(),
             });
+
             return { allowed: true };
         }
 
@@ -87,7 +90,7 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
 
         if (now >= rpmResetAt) {
             rpmCount = 0;
-            rpmResetAt = new Date(now.getTime() + 60_000);
+            rpmResetAt = new Date(now.getTime() + GEMINI_RPM_WINDOW_MS);
         }
         if (now >= rpdResetAt) {
             rpdCount = 0;
@@ -130,11 +133,20 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
  * Silently ignores messages with no `from` field (e.g. channel posts).
  * @param ctx - The Grammy context for the current update.
  */
+const ALL_COMMAND_NAMES = new Set(ADMIN_COMMANDS.map((c) => c.command));
+
+function resolveStatType(input: string): "COMMAND" | "AI_CHAT" {
+    if (!input.startsWith("/")) return "AI_CHAT";
+    const commandPart = input.slice(1).split(/[\s@]/)[0] ?? "";
+    return ALL_COMMAND_NAMES.has(commandPart) ? "COMMAND" : "AI_CHAT";
+}
+
 export async function logUserActivity(ctx: Context): Promise<void> {
     const userId = ctx.from?.id;
     if (!userId) return;
 
     const username = ctx.from?.username ?? null;
+    const input = ctx.message?.text ?? null;
 
     try {
         await db
@@ -149,9 +161,14 @@ export async function logUserActivity(ctx: Context): Promise<void> {
                 set: { username, updatedAt: new Date() },
             });
 
+        if (!input) {
+            return;
+        }
+
         await db.insert(userStats).values({
             usersId: userId,
-            input: ctx.message?.text ?? null,
+            input,
+            type: resolveStatType(input),
         });
     } catch (e) {
         console.error("[logUserActivity]", e);
@@ -173,7 +190,12 @@ export async function saveGeminiResponse(
         const [latestStat] = await db
             .select({ id: userStats.id })
             .from(userStats)
-            .where(eq(userStats.usersId, userId))
+            .where(
+                and(
+                    eq(userStats.usersId, userId),
+                    eq(userStats.type, "AI_CHAT"),
+                ),
+            )
             .orderBy(desc(userStats.createdAt))
             .limit(1);
 
@@ -200,7 +222,9 @@ export async function getTopListVendors(): Promise<Set<string>> {
         db
             .select({
                 modelId: llmRatings.modelId,
-                rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${llmRatings.category} ORDER BY ${llmRatings.eloRating} DESC)`.as("rn"),
+                rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${llmRatings.category} ORDER BY ${llmRatings.eloRating} DESC)`.as(
+                    "rn",
+                ),
             })
             .from(llmRatings)
             .where(ne(llmRatings.category, OVERALL_CATEGORY)),
@@ -250,6 +274,7 @@ async function syncLLMs(): Promise<{ logs: string[]; count: number }> {
                 lastUpdated: new Date(),
             })
             .where(eq(llmRegistry.modelId, entry.modelId));
+
         count++;
     }
 
@@ -278,7 +303,11 @@ function inferVendor(lmarenaId: string): string {
  * (model, category) pair into llmRatings (category-specific ELO).
  * @returns Log lines and total count of rating rows upserted.
  */
-async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: boolean }> {
+async function syncELO(): Promise<{
+    logs: string[];
+    count: number;
+    hasChanges: boolean;
+}> {
     const logs: string[] = [];
     let count = 0;
     let hasChanges = false;
@@ -289,8 +318,8 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
 
     const existing = await db
         .select({
-            modelId:   llmRatings.modelId,
-            category:  llmRatings.category,
+            modelId: llmRatings.modelId,
+            category: llmRatings.category,
             eloRating: llmRatings.eloRating,
         })
         .from(llmRatings)
@@ -300,6 +329,14 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
         existing.map((r) => [`${r.modelId}:${r.category}`, r.eloRating]),
     );
     const hasExistingData = existingMap.size > 0;
+
+    const registryMap = new Map<string, { modelId: string; vendor: string }>();
+    const ratingsValues: {
+        modelId: string;
+        category: string;
+        eloRating: number;
+        ratingSource: string;
+    }[] = [];
 
     for (const category of LMARENA_CATEGORIES) {
         const models = data[category];
@@ -315,37 +352,47 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
             const vendor = inferVendor(lmarenaId);
             const newElo = Math.round(modelData.rating);
 
-            if (hasExistingData && existingMap.get(`${lmarenaId}:${category}`) !== newElo) {
+            if (
+                hasExistingData &&
+                existingMap.get(`${lmarenaId}:${category}`) !== newElo
+            ) {
                 hasChanges = true;
             }
 
-            await db
-                .insert(llmRegistry)
-                .values({ modelId: lmarenaId, vendor })
-                .onConflictDoUpdate({
-                    target: llmRegistry.modelId,
-                    set: { vendor, lastUpdated: new Date() },
-                });
-
-            await db
-                .insert(llmRatings)
-                .values({
-                    modelId: lmarenaId,
-                    category,
-                    eloRating: newElo,
-                    ratingSource: "lmarena.ai",
-                })
-                .onConflictDoUpdate({
-                    target: [llmRatings.modelId, llmRatings.category],
-                    set: {
-                        eloRating: newElo,
-                        lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
-                    },
-                });
+            registryMap.set(lmarenaId, { modelId: lmarenaId, vendor });
+            ratingsValues.push({
+                modelId: lmarenaId,
+                category,
+                eloRating: newElo,
+                ratingSource: "lmarena.ai",
+            });
             count++;
         }
 
         logs.push(`✅ ${category}: TOP-${TOP_MODELS_LIMIT} models synced`);
+    }
+
+    if (registryMap.size > 0) {
+        await db
+            .insert(llmRegistry)
+            .values([...registryMap.values()])
+            .onConflictDoUpdate({
+                target: llmRegistry.modelId,
+                set: { vendor: sql`EXCLUDED.vendor`, lastUpdated: new Date() },
+            });
+    }
+
+    if (ratingsValues.length > 0) {
+        await db
+            .insert(llmRatings)
+            .values(ratingsValues)
+            .onConflictDoUpdate({
+                target: [llmRatings.modelId, llmRatings.category],
+                set: {
+                    eloRating: sql`EXCLUDED.elo_rating`,
+                    lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
+                },
+            });
     }
 
     await db
@@ -353,11 +400,16 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
         .select(
             db
                 .select({
-                    modelId:      llmRatings.modelId,
-                    category:     sql<string>`${OVERALL_CATEGORY}`.as("category"),
-                    eloRating:    sql<number>`ROUND(AVG(${llmRatings.eloRating}))::integer`.as("elo_rating"),
-                    ratingSource: sql<string>`${"lmarena.ai (avg)"}`.as("rating_source"),
-                    lastUpdated:  sql<Date>`NOW()`.as("last_updated"),
+                    modelId: llmRatings.modelId,
+                    category: sql<string>`${OVERALL_CATEGORY}`.as("category"),
+                    eloRating:
+                        sql<number>`ROUND(AVG(${llmRatings.eloRating}))::integer`.as(
+                            "elo_rating",
+                        ),
+                    ratingSource: sql<string>`${"lmarena.ai (avg)"}`.as(
+                        "rating_source",
+                    ),
+                    lastUpdated: sql<Date>`NOW()`.as("last_updated"),
                 })
                 .from(llmRatings)
                 .where(ne(llmRatings.category, OVERALL_CATEGORY))
@@ -366,7 +418,7 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
         .onConflictDoUpdate({
             target: [llmRatings.modelId, llmRatings.category],
             set: {
-                eloRating:   sql`EXCLUDED.elo_rating`,
+                eloRating: sql`EXCLUDED.elo_rating`,
                 lastUpdated: sql`NOW()`,
             },
         });
@@ -384,7 +436,11 @@ async function syncELO(): Promise<{ logs: string[]; count: number; hasChanges: b
  * Entries with unrecognised sync sources are logged as warnings and skipped.
  * @returns Log lines and count of entries successfully updated.
  */
-async function syncTech(): Promise<{ logs: string[]; count: number }> {
+async function syncTech(): Promise<{
+    logs: string[];
+    count: number;
+    hasChanges: boolean;
+}> {
     const logs: string[] = [];
     let count = 0;
     const entries = await db.select().from(techRegistry);
@@ -399,55 +455,83 @@ async function syncTech(): Promise<{ logs: string[]; count: number }> {
         logs.push(`⚠️ Unknown sync_source "${e.syncSource}" for ${e.entryId}`);
     }
 
-    for (const entry of githubEntries) {
-        if (!entry.syncId) {
-            logs.push(`⚠️ Missing GitHub slug for ${entry.entryId}`);
-            continue;
-        }
-        const res = await fetch(`${GITHUB_REPOS_URL}/${entry.syncId}`);
-        if (!res.ok) {
-            logs.push(
-                `⚠️ GitHub API error for ${entry.entryId}: ${res.status}`,
+    const githubResults = await Promise.all(
+        githubEntries.map(async (entry) => {
+            if (!entry.syncId) {
+                return {
+                    log: `⚠️ Missing GitHub slug for ${entry.entryId}`,
+                    update: null,
+                };
+            }
+            const res = await fetch(`${GITHUB_REPOS_URL}/${entry.syncId}`);
+            if (!res.ok) {
+                return {
+                    log: `⚠️ GitHub API error for ${entry.entryId}: ${res.status}`,
+                    update: null,
+                };
+            }
+            const repo = (await res.json()) as GitHubRepo;
+            const kStars = parseFloat(
+                (repo.stargazers_count / 1000).toFixed(1),
             );
-            continue;
+            return {
+                log: `✅ ${entry.name}: ${kStars}k stars synced`,
+                update: { entryId: entry.entryId, score: kStars },
+            };
+        }),
+    );
+
+    for (const result of githubResults) {
+        logs.push(result.log);
+        if (result.update) {
+            await db
+                .update(techRegistry)
+                .set({ score: result.update.score, lastUpdated: new Date() })
+                .where(eq(techRegistry.entryId, result.update.entryId));
+            count++;
         }
-        const repo = (await res.json()) as GitHubRepo;
-        const kStars = parseFloat((repo.stargazers_count / 1000).toFixed(1));
-        await db
-            .update(techRegistry)
-            .set({ score: kStars, lastUpdated: new Date() })
-            .where(eq(techRegistry.entryId, entry.entryId));
-        logs.push(`✅ ${entry.name}: ${kStars}k stars synced`);
-        count++;
     }
 
-    for (const entry of sweBenchEntries) {
-        if (!entry.syncId) {
-            logs.push(`⚠️ Missing SWE-bench run ID for ${entry.entryId}`);
-            continue;
-        }
-        const res = await fetch(
-            `${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`,
-        );
-        if (!res.ok) {
-            logs.push(
-                `⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`,
+    const sweBenchResults = await Promise.all(
+        sweBenchEntries.map(async (entry) => {
+            if (!entry.syncId) {
+                return {
+                    log: `⚠️ Missing SWE-bench run ID for ${entry.entryId}`,
+                    update: null,
+                };
+            }
+            const res = await fetch(
+                `${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`,
             );
-            continue;
+            if (!res.ok) {
+                return {
+                    log: `⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`,
+                    update: null,
+                };
+            }
+            const data = (await res.json()) as SweBenchResults;
+            const score = data.resolved.length / SWEBENCH_VERIFIED_TOTAL;
+            return {
+                log: `✅ ${entry.name}: ${(score * 100).toFixed(
+                    1,
+                )}% SWE-bench synced`,
+                update: { entryId: entry.entryId, score },
+            };
+        }),
+    );
+
+    for (const result of sweBenchResults) {
+        logs.push(result.log);
+        if (result.update) {
+            await db
+                .update(techRegistry)
+                .set({ score: result.update.score, lastUpdated: new Date() })
+                .where(eq(techRegistry.entryId, result.update.entryId));
+            count++;
         }
-        const data = (await res.json()) as SweBenchResults;
-        const score = data.resolved.length / SWEBENCH_VERIFIED_TOTAL;
-        await db
-            .update(techRegistry)
-            .set({ score, lastUpdated: new Date() })
-            .where(eq(techRegistry.entryId, entry.entryId));
-        logs.push(
-            `✅ ${entry.name}: ${(score * 100).toFixed(1)}% SWE-bench synced`,
-        );
-        count++;
     }
 
-    return { logs, count };
+    return { logs, count, hasChanges: count > 0 };
 }
 
 /**
@@ -478,8 +562,13 @@ export async function syncData(ctx?: Context): Promise<void> {
     }
 
     try {
-        const { logs: techLogs, count: techCount } = await syncTech();
+        const {
+            logs: techLogs,
+            count: techCount,
+            hasChanges: techHasChanges,
+        } = await syncTech();
         syncedTools = techCount;
+        hasNewData = hasNewData || techHasChanges;
         allLogs.push("", "🛠 Tools:", ...techLogs);
     } catch (e) {
         console.error("[syncData][tech]", e);
@@ -496,10 +585,12 @@ export async function syncData(ctx?: Context): Promise<void> {
     const displayedModels = eloSynced
         ? LMARENA_CATEGORIES.length * TOP_MODELS_LIMIT
         : 0;
+
     const total = displayedModels + syncedTools;
     const summary = hasNewData
         ? `🆕 Sync complete — new leaderboard data applied. ${total} entries updated (${displayedModels} models, ${syncedTools} tools).`
         : `🔄 Sync complete — upstream source unchanged. ${total} entries displayed (${displayedModels} models, ${syncedTools} tools).`;
+
     console.log(`[syncData] ${summary}`);
 
     if (ctx) {
