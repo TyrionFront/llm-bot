@@ -72,7 +72,7 @@ describe("verifyTelegramLogin", () => {
         const fields = { id: "42", auth_date: freshAuthDate() };
         const hash = await buildTelegramHash(fields, TEST_BOT_TOKEN);
         const result = await AuthService.verifyTelegramLogin(
-            { ...fields, hash: hash.replace(/.$/, "0") },
+            { ...fields, hash: hash.replace(/.$/, (c) => (c === "0" ? "1" : "0")) },
             TEST_BOT_TOKEN,
         );
         expect(result).toBe(false);
