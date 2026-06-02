@@ -181,7 +181,7 @@ export class ApiService {
         const [statsAgg] = await db
             .select({
                 totalQueries: count(),
-                totalWithResponse: sql<number>`COUNT(${userStats.response})`,
+                totalWithResponse: sql<number>`COUNT(${userStats.response})::integer`,
             })
             .from(userStats)
             .where(eq(userStats.usersId, userId));

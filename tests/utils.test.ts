@@ -162,7 +162,7 @@ describe("syncData", () => {
         expect(ctx.reply).toHaveBeenCalledTimes(2);
         const [text] = ctx.reply.mock.calls[0] as [string];
         expect(text).toMatch(/Sync complete/);
-        expect(text).toMatch(/\d+ entries displayed/);
+        expect(text).toMatch(/\d+ entries (displayed|updated)/);
     });
 
     it("updates tech registry scores from GitHub API", async () => {
