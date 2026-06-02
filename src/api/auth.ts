@@ -240,5 +240,3 @@ export class AuthService {
         return data;
     }
 }
-
-

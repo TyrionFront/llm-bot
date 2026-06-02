@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNotNull, lt } from "drizzle-orm";
+import { and, count, desc, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { userStats, users } from "../db/schema";
 import { ADMIN_ID } from "../bot/constants";
@@ -7,7 +7,7 @@ import type { AuthedHandler, JwtPayload, TelegramLoginPayload } from "./types";
 import {
     AUTH_RATE_LIMIT,
     AUTH_RATE_WINDOW_MS,
-    PAGE_SIZE,
+    STATS_PAGE_SIZE,
     STATS_GLOBAL_LIMIT,
     STATS_GLOBAL_WINDOW_MS,
     STATS_USER_THROTTLE_MS,
@@ -22,6 +22,23 @@ export class ApiService {
     private static readonly statsUserLastSeen = new Map<number, number>();
     private static statsGlobalCount = 0;
     private static statsGlobalWindowStart = Date.now();
+
+    static {
+        const timer = setInterval(() => {
+            const now = Date.now();
+            for (const [ip, entry] of ApiService.authRateLimiter) {
+                if (now - entry.windowStart > AUTH_RATE_WINDOW_MS) {
+                    ApiService.authRateLimiter.delete(ip);
+                }
+            }
+            for (const [userId, ts] of ApiService.statsUserLastSeen) {
+                if (now - ts >= STATS_USER_THROTTLE_MS) {
+                    ApiService.statsUserLastSeen.delete(userId);
+                }
+            }
+        }, AUTH_RATE_WINDOW_MS);
+        timer.unref();
+    }
 
     public static checkAuthRateLimit(req: Request): boolean {
         const ip =
@@ -161,21 +178,16 @@ export class ApiService {
         const cursorParam = new URL(req.url).searchParams.get("cursor");
         const cursor = cursorParam ? parseInt(cursorParam, 10) : null;
 
-        const totalQueryResult = await db
-            .select({ value: count() })
+        const [statsAgg] = await db
+            .select({
+                totalQueries: count(),
+                totalWithResponse: sql<number>`COUNT(${userStats.response})`,
+            })
             .from(userStats)
             .where(eq(userStats.usersId, userId));
 
-        const totalQueries = totalQueryResult[0]?.value ?? 0;
-
-        const totalWithResponseResult = await db
-            .select({ value: count() })
-            .from(userStats)
-            .where(
-                and(eq(userStats.usersId, userId), isNotNull(userStats.response)),
-            );
-
-        const totalWithResponse = totalWithResponseResult[0]?.value ?? 0;
+        const totalQueries = statsAgg?.totalQueries ?? 0;
+        const totalWithResponse = statsAgg?.totalWithResponse ?? 0;
 
         const whereClause =
             cursor !== null && !isNaN(cursor)
@@ -192,10 +204,10 @@ export class ApiService {
             .from(userStats)
             .where(whereClause)
             .orderBy(desc(userStats.id))
-            .limit(PAGE_SIZE);
+            .limit(STATS_PAGE_SIZE);
 
         const nextCursor =
-            recentActivity.length === PAGE_SIZE
+            recentActivity.length === STATS_PAGE_SIZE
                 ? recentActivity[recentActivity.length - 1]?.id ?? null
                 : null;
 
@@ -208,5 +220,4 @@ export class ApiService {
         });
     }
 }
-
 

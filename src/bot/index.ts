@@ -9,7 +9,7 @@ export class BotRunner {
         onTimeout: "return",
     });
 
-    public static start = async (): Promise<void> => {
+    public static async start(): Promise<void> {
         try {
             await BotSetup.bot.api.setWebhook(process.env.WEBHOOK_URL!, {
                 secret_token: process.env.WEBHOOK_SECRET_TOKEN,
@@ -39,5 +39,5 @@ export class BotRunner {
                 console.error("[cron] Scheduled sync failed:", e);
             }
         }, SYNC_INTERVAL_MS);
-    };
+    }
 }

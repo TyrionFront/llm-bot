@@ -133,12 +133,12 @@ export async function checkAndIncrementGeminiLimit(): Promise<RateLimitResult> {
  * Silently ignores messages with no `from` field (e.g. channel posts).
  * @param ctx - The Grammy context for the current update.
  */
-const BOT_COMMAND_NAMES = new Set(ADMIN_COMMANDS.map((c) => c.command));
+const ALL_COMMAND_NAMES = new Set(ADMIN_COMMANDS.map((c) => c.command));
 
 function resolveStatType(input: string): "COMMAND" | "AI_CHAT" {
     if (!input.startsWith("/")) return "AI_CHAT";
     const commandPart = input.slice(1).split(/[\s@]/)[0] ?? "";
-    return BOT_COMMAND_NAMES.has(commandPart) ? "COMMAND" : "AI_CHAT";
+    return ALL_COMMAND_NAMES.has(commandPart) ? "COMMAND" : "AI_CHAT";
 }
 
 export async function logUserActivity(ctx: Context): Promise<void> {
@@ -330,6 +330,14 @@ async function syncELO(): Promise<{
     );
     const hasExistingData = existingMap.size > 0;
 
+    const registryMap = new Map<string, { modelId: string; vendor: string }>();
+    const ratingsValues: {
+        modelId: string;
+        category: string;
+        eloRating: number;
+        ratingSource: string;
+    }[] = [];
+
     for (const category of LMARENA_CATEGORIES) {
         const models = data[category];
         if (!models) {
@@ -351,34 +359,40 @@ async function syncELO(): Promise<{
                 hasChanges = true;
             }
 
-            await db
-                .insert(llmRegistry)
-                .values({ modelId: lmarenaId, vendor })
-                .onConflictDoUpdate({
-                    target: llmRegistry.modelId,
-                    set: { vendor, lastUpdated: new Date() },
-                });
-
-            await db
-                .insert(llmRatings)
-                .values({
-                    modelId: lmarenaId,
-                    category,
-                    eloRating: newElo,
-                    ratingSource: "lmarena.ai",
-                })
-                .onConflictDoUpdate({
-                    target: [llmRatings.modelId, llmRatings.category],
-                    set: {
-                        eloRating: newElo,
-                        lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
-                    },
-                });
-
+            registryMap.set(lmarenaId, { modelId: lmarenaId, vendor });
+            ratingsValues.push({
+                modelId: lmarenaId,
+                category,
+                eloRating: newElo,
+                ratingSource: "lmarena.ai",
+            });
             count++;
         }
 
         logs.push(`✅ ${category}: TOP-${TOP_MODELS_LIMIT} models synced`);
+    }
+
+    if (registryMap.size > 0) {
+        await db
+            .insert(llmRegistry)
+            .values([...registryMap.values()])
+            .onConflictDoUpdate({
+                target: llmRegistry.modelId,
+                set: { vendor: sql`EXCLUDED.vendor`, lastUpdated: new Date() },
+            });
+    }
+
+    if (ratingsValues.length > 0) {
+        await db
+            .insert(llmRatings)
+            .values(ratingsValues)
+            .onConflictDoUpdate({
+                target: [llmRatings.modelId, llmRatings.category],
+                set: {
+                    eloRating: sql`EXCLUDED.elo_rating`,
+                    lastUpdated: sql`CASE WHEN ${llmRatings.eloRating} != EXCLUDED.elo_rating THEN NOW() ELSE ${llmRatings.lastUpdated} END`,
+                },
+            });
     }
 
     await db
@@ -422,7 +436,11 @@ async function syncELO(): Promise<{
  * Entries with unrecognised sync sources are logged as warnings and skipped.
  * @returns Log lines and count of entries successfully updated.
  */
-async function syncTech(): Promise<{ logs: string[]; count: number }> {
+async function syncTech(): Promise<{
+    logs: string[];
+    count: number;
+    hasChanges: boolean;
+}> {
     const logs: string[] = [];
     let count = 0;
     const entries = await db.select().from(techRegistry);
@@ -437,57 +455,83 @@ async function syncTech(): Promise<{ logs: string[]; count: number }> {
         logs.push(`⚠️ Unknown sync_source "${e.syncSource}" for ${e.entryId}`);
     }
 
-    for (const entry of githubEntries) {
-        if (!entry.syncId) {
-            logs.push(`⚠️ Missing GitHub slug for ${entry.entryId}`);
-            continue;
-        }
-        const res = await fetch(`${GITHUB_REPOS_URL}/${entry.syncId}`);
-        if (!res.ok) {
-            logs.push(
-                `⚠️ GitHub API error for ${entry.entryId}: ${res.status}`,
+    const githubResults = await Promise.all(
+        githubEntries.map(async (entry) => {
+            if (!entry.syncId) {
+                return {
+                    log: `⚠️ Missing GitHub slug for ${entry.entryId}`,
+                    update: null,
+                };
+            }
+            const res = await fetch(`${GITHUB_REPOS_URL}/${entry.syncId}`);
+            if (!res.ok) {
+                return {
+                    log: `⚠️ GitHub API error for ${entry.entryId}: ${res.status}`,
+                    update: null,
+                };
+            }
+            const repo = (await res.json()) as GitHubRepo;
+            const kStars = parseFloat(
+                (repo.stargazers_count / 1000).toFixed(1),
             );
-            continue;
-        }
-        const repo = (await res.json()) as GitHubRepo;
-        const kStars = parseFloat((repo.stargazers_count / 1000).toFixed(1));
-        await db
-            .update(techRegistry)
-            .set({ score: kStars, lastUpdated: new Date() })
-            .where(eq(techRegistry.entryId, entry.entryId));
+            return {
+                log: `✅ ${entry.name}: ${kStars}k stars synced`,
+                update: { entryId: entry.entryId, score: kStars },
+            };
+        }),
+    );
 
-        logs.push(`✅ ${entry.name}: ${kStars}k stars synced`);
-        count++;
+    for (const result of githubResults) {
+        logs.push(result.log);
+        if (result.update) {
+            await db
+                .update(techRegistry)
+                .set({ score: result.update.score, lastUpdated: new Date() })
+                .where(eq(techRegistry.entryId, result.update.entryId));
+            count++;
+        }
     }
 
-    for (const entry of sweBenchEntries) {
-        if (!entry.syncId) {
-            logs.push(`⚠️ Missing SWE-bench run ID for ${entry.entryId}`);
-            continue;
-        }
-        const res = await fetch(
-            `${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`,
-        );
-        if (!res.ok) {
-            logs.push(
-                `⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`,
+    const sweBenchResults = await Promise.all(
+        sweBenchEntries.map(async (entry) => {
+            if (!entry.syncId) {
+                return {
+                    log: `⚠️ Missing SWE-bench run ID for ${entry.entryId}`,
+                    update: null,
+                };
+            }
+            const res = await fetch(
+                `${SWEBENCH_EXPERIMENTS_URL}/${entry.syncId}/results/results.json`,
             );
-            continue;
-        }
-        const data = (await res.json()) as SweBenchResults;
-        const score = data.resolved.length / SWEBENCH_VERIFIED_TOTAL;
-        await db
-            .update(techRegistry)
-            .set({ score, lastUpdated: new Date() })
-            .where(eq(techRegistry.entryId, entry.entryId));
+            if (!res.ok) {
+                return {
+                    log: `⚠️ SWE-bench fetch error for ${entry.entryId}: ${res.status}`,
+                    update: null,
+                };
+            }
+            const data = (await res.json()) as SweBenchResults;
+            const score = data.resolved.length / SWEBENCH_VERIFIED_TOTAL;
+            return {
+                log: `✅ ${entry.name}: ${(score * 100).toFixed(
+                    1,
+                )}% SWE-bench synced`,
+                update: { entryId: entry.entryId, score },
+            };
+        }),
+    );
 
-        logs.push(
-            `✅ ${entry.name}: ${(score * 100).toFixed(1)}% SWE-bench synced`,
-        );
-        count++;
+    for (const result of sweBenchResults) {
+        logs.push(result.log);
+        if (result.update) {
+            await db
+                .update(techRegistry)
+                .set({ score: result.update.score, lastUpdated: new Date() })
+                .where(eq(techRegistry.entryId, result.update.entryId));
+            count++;
+        }
     }
 
-    return { logs, count };
+    return { logs, count, hasChanges: count > 0 };
 }
 
 /**
@@ -518,8 +562,13 @@ export async function syncData(ctx?: Context): Promise<void> {
     }
 
     try {
-        const { logs: techLogs, count: techCount } = await syncTech();
+        const {
+            logs: techLogs,
+            count: techCount,
+            hasChanges: techHasChanges,
+        } = await syncTech();
         syncedTools = techCount;
+        hasNewData = hasNewData || techHasChanges;
         allLogs.push("", "🛠 Tools:", ...techLogs);
     } catch (e) {
         console.error("[syncData][tech]", e);
@@ -536,10 +585,12 @@ export async function syncData(ctx?: Context): Promise<void> {
     const displayedModels = eloSynced
         ? LMARENA_CATEGORIES.length * TOP_MODELS_LIMIT
         : 0;
+
     const total = displayedModels + syncedTools;
     const summary = hasNewData
         ? `🆕 Sync complete — new leaderboard data applied. ${total} entries updated (${displayedModels} models, ${syncedTools} tools).`
         : `🔄 Sync complete — upstream source unchanged. ${total} entries displayed (${displayedModels} models, ${syncedTools} tools).`;
+
     console.log(`[syncData] ${summary}`);
 
     if (ctx) {

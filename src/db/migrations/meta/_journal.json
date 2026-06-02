@@ -71,6 +71,13 @@
             "when": 1772368197001,
             "tag": "0009_user_stats_type_enum",
             "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1772368197002,
+            "tag": "0010_ensure_user_stat_type",
+            "breakpoints": true
         }
     ]
 }

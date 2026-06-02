@@ -35,8 +35,8 @@ export class BotHandlers {
         return rows
             .map(
                 (m, i) =>
-                    `${i + 1}. *${m.modelId}* (${m.vendor})\n` +
-                    `    🏆 ELO: *${m.eloRating}* · 📡 ${
+                    `${i + 1}. <b>${m.modelId}</b> (${m.vendor})\n` +
+                    `    🏆 ELO: <b>${m.eloRating}</b> · 📡 ${
                         m.ratingSource ?? "N/A"
                     }`,
             )
@@ -71,7 +71,7 @@ export class BotHandlers {
     }
 
     private static formatDataRemark(dataAsOf: Date | null): string {
-        if (!dataAsOf) return "_Source: lmarena.ai_";
+        if (!dataAsOf) return "<i>Source: lmarena.ai</i>";
         const dateStr = dataAsOf.toLocaleDateString("en-GB", {
             day: "numeric",
             month: "short",
@@ -79,9 +79,9 @@ export class BotHandlers {
         });
         const ageMs = Date.now() - dataAsOf.getTime();
         if (ageMs < SEVEN_DAYS_MS) {
-            return `🆕 _Updated ${dateStr} · Source: lmarena.ai_`;
+            return `🆕 <i>Updated ${dateStr} · Source: lmarena.ai</i>`;
         }
-        return `⚠️ _Data as of ${dateStr} · lmarena.ai hasn't published a newer dataset_`;
+        return `⚠️ <i>Data as of ${dateStr} · lmarena.ai hasn't published a newer dataset</i>`;
     }
 
     public static async handleStart(
@@ -170,21 +170,21 @@ export class BotHandlers {
                     const scoreLine =
                         r.score != null && scoreFormatter
                             ? scoreFormatter(r.score)
-                            : "📊 Score: *N/A*";
-                    return `${i + 1}. *${r.name}* (${
+                            : "📊 Score: <b>N/A</b>";
+                    return `${i + 1}. <b>${r.name}</b> (${
                         r.vendor
                     })\n    ${category} · ${scoreLine}`;
                 })
                 .join("\n\n");
 
             const remark =
-                "_Only tools and frameworks with a live public API are tracked. " +
+                "<i>Only tools and frameworks with a live public API are tracked. " +
                 "Ranking is by ⭐ GitHub stars as a proxy for ecosystem adoption. " +
-                "Tools without a verifiable public data source are excluded._";
+                "Tools without a verifiable public data source are excluded.</i>";
 
             await ctx.reply(
-                `🛠 *Coding Tools & Agents Leaderboard*\n\n${text}\n\n${remark}`,
-                { parse_mode: "Markdown" },
+                `🛠 <b>Coding Tools &amp; Agents Leaderboard</b>\n\n${text}\n\n${remark}`,
+                { parse_mode: "HTML" },
             );
         } catch (e) {
             console.error("[/tools]", e);
@@ -212,10 +212,10 @@ export class BotHandlers {
 
                 const remark = BotHandlers.formatDataRemark(dataAsOf);
                 await ctx.reply(
-                    `📊 *LLM Leaderboard — ${label}*\n\n_${description}_\n\n${BotHandlers.formatLeaderboardRows(
+                    `📊 <b>LLM Leaderboard — ${label}</b>\n\n<i>${description}</i>\n\n${BotHandlers.formatLeaderboardRows(
                         rows,
                     )}\n\n${remark}`,
-                    { parse_mode: "Markdown" },
+                    { parse_mode: "HTML" },
                 );
             } catch (e) {
                 console.error(`[/ratings_${category}]`, e);
@@ -251,7 +251,10 @@ export class BotHandlers {
         try {
             const res = await fetch(GEMINI_API_URL, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": process.env.GEMINI_KEY!,
+                },
                 body: JSON.stringify({
                     systemInstruction: {
                         parts: [{ text: GEMINI_SYSTEM_PROMPT }],

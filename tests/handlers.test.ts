@@ -209,7 +209,7 @@ describe("handleTools", () => {
 
         expect(ctx.reply).toHaveBeenCalledTimes(1);
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        expect(text).toContain("Coding Tools & Agents Leaderboard");
+        expect(text).toContain("Coding Tools &amp; Agents Leaderboard");
         expect(text).toContain("LangGraph");
         expect(text).toContain("OpenCode");
     });
@@ -219,7 +219,7 @@ describe("handleTools", () => {
         await BotHandlers.handleTools(ctx);
 
         const [text] = ctx.reply.mock.calls[0] as [string, unknown];
-        expect(text).toContain("Score: *N/A*");
+        expect(text).toContain("Score: <b>N/A</b>");
     });
 
     it("shows GitHub star score after a sync", async () => {
